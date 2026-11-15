@@ -40,14 +40,6 @@ function interleave(lists: StoreApp[][]): StoreApp[] {
   return merged;
 }
 
-function OperationBanner({ operation, canCancel, onCancel }: { operation: Operation; canCancel: boolean; onCancel: () => void }) {
-  return <Column modifiers={[padding(14, 0, 14, 14)]}>
-    <LinearProgressIndicator progress={percentToRatio(operation.percent)} />
-    <Text style={{ typography: "bodyMedium" }} maxLines={2} modifiers={[padding(6, 0, 0, 0)]}>{operation.app.name}: {operation.progress}</Text>
-    <Show when={canCancel}><Button onClick={onCancel}><Text>Cancel {operation.app.name}</Text></Button></Show>
-  </Column>;
-}
-
 function SourceBadge({ app }: { app: StoreApp }) {
   if (app.sourceUnavailable) return <Text style={{ typography: "bodySmall" }}>source unavailable</Text>;
   return <Text style={{ typography: "labelSmall" }}>{app.sourceLabel ?? app.source}</Text>;
@@ -96,7 +88,7 @@ function Screenshots({ app }: { app: StoreApp }) {
   );
 }
 
-function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, percent, onOpenDetails, onInstall, onUninstall, onLaunch }: {
+function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, onCancel, onOpenDetails, onInstall, onUninstall, onLaunch }: {
   app: StoreApp;
   installed: boolean;
   updateAvailable: boolean;
@@ -104,6 +96,8 @@ function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, p
   busyLabel: string;
   progress: string;
   percent: number | null;
+  canCancel: boolean;
+  onCancel: () => void;
   onOpenDetails: (app: StoreApp) => void;
   onInstall: (app: StoreApp) => void;
   onUninstall: (app: StoreApp) => void;
@@ -125,13 +119,15 @@ function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, p
       </Row>
       <Show when={isBusy}>
         <LinearProgressIndicator progress={percentToRatio(percent)} modifiers={[padding(0, 12, 12, 12)]} />
+        <ProgressLine progress={progress} />
+        <Show when={canCancel}><Button onClick={onCancel}><Text>Cancel</Text></Button></Show>
       </Show>
     </Column>
   );
 }
 
-function DetailContent({ app, installed, updateAvailable, busy, busyLabel, progress, percent, onBack, onInstall, onUninstall }: {
-  app: StoreApp; installed: boolean; updateAvailable: boolean; busy: boolean; busyLabel: string; progress: string; percent: number | null; onBack: () => void; onInstall: () => void; onUninstall: () => void;
+function DetailContent({ app, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, onCancel, onBack, onInstall, onUninstall }: {
+  app: StoreApp; installed: boolean; updateAvailable: boolean; busy: boolean; busyLabel: string; progress: string; percent: number | null; canCancel: boolean; onCancel: () => void; onBack: () => void; onInstall: () => void; onUninstall: () => void;
 }) {
   const permissionText = app.permissions.length ? app.permissions.join(" · ") : "Permission details are not included for this app's source.";
   const actionLabel = busy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? "Uninstall" : "Install";
@@ -154,6 +150,7 @@ function DetailContent({ app, installed, updateAvailable, busy, busyLabel, progr
           <Show when={Boolean(progress)}><LinearProgressIndicator progress={percentToRatio(percent)} /></Show>
           <ProgressLine progress={progress} />
         </Column>
+        <Show when={busy && canCancel}><Button onClick={onCancel}><Text>Cancel</Text></Button></Show>
       </Row>
       <Screenshots app={app} />
       <Text style={{ typography: "titleMedium" }}>Permissions</Text>
@@ -440,6 +437,7 @@ export default function App() {
       <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(operations[item.ref])}
         busyLabel={operations[item.ref] ? busyButtonLabel(operations[item.ref].kind) : ""}
         progress={operations[item.ref]?.progress ?? ""} percent={operations[item.ref]?.percent ?? null}
+        canCancel={Boolean(sources.find((source) => source.name === item.source)?.cancel)} onCancel={() => void cancelOperation(item.ref)}
         onOpenDetails={openDetails}
         onInstall={(app) => void startInstall(app)} onUninstall={(app) => void startUninstall(app)} onLaunch={(app) => void launchApp(app)} />
     </Host>
@@ -468,6 +466,7 @@ export default function App() {
     const currentDetail = selected;
     content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(`${currentDetail.source}:${currentDetail.id}`)} updateAvailable={updateIds.has(`${currentDetail.source}:${currentDetail.id}`)} busy={Boolean(operations[currentDetail.ref])}
       busyLabel={operations[currentDetail.ref] ? busyButtonLabel(operations[currentDetail.ref].kind) : ""} progress={operations[currentDetail.ref]?.progress ?? ""} percent={operations[currentDetail.ref]?.percent ?? null}
+      canCancel={Boolean(sources.find((source) => source.name === currentDetail.source)?.cancel)} onCancel={() => void cancelOperation(currentDetail.ref)}
       onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} /></Host>;
   } else if (page === "sources") {
     content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
@@ -509,11 +508,6 @@ export default function App() {
     </View>;
   }
 
-  const operationBanners = Object.values(operations).map((operation) =>
-    <OperationBanner key={operation.id} operation={operation}
-      canCancel={Boolean(sources.find((source) => source.name === operation.app.source)?.cancel)}
-      onCancel={() => void cancelOperation(operation.app.ref)} />);
-
   return (
     <View style={{ flex: 1, backgroundColor: themeColors.background }}>
       <Host matchContents={{ vertical: true }} colorScheme="dark" seedColor="#79c75b"><Column>
@@ -524,8 +518,7 @@ export default function App() {
           <Button onClick={() => void selectPage("updates")}><Text>Updates</Text></Button>
           <Button onClick={() => void selectPage("sources")}><Text>Sources</Text></Button>
         </Row>
-        {operationBanners}
-        <Show when={Boolean(message)}><Text style={{ typography: "bodyMedium" }} modifiers={[padding(18, 0, 18, 8)]}>{message}</Text></Show>
+        <Host style={{ height: 48 }} matchContents={{ vertical: true }} colorScheme="dark"><Show when={Boolean(message)}><Text style={{ typography: "bodyMedium" }} maxLines={1} modifiers={[padding(18, 0, 18, 8)]}>{message}</Text></Show></Host>
       </Column></Host>
       {content}
     </View>
