@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppState, FlatList, Linking, View } from "react-native";
 import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Text, RNHostView, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
@@ -188,6 +188,7 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [searchErrors, setSearchErrors] = useState<Array<{ source: string; message: string }>>([]);
   const [operations, setOperations] = useState<Record<string, Operation>>({});
+  const requestId = useRef(0);
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
   const updateIds = useMemo(() => new Set(updateApps.map((app) => `${app.source}:${app.id}`)), [updateApps]);
   const updateOperation = (ref: string, change: Operation | null) => setOperations((current) => {
@@ -262,15 +263,23 @@ export default function App() {
   }
 
   async function loadCollection(nextFeed: Feed) {
+    const request = ++requestId.current;
     setLoading(true); setMessage("");
-    try { setApps(await getCollection(nextFeed === "popular" ? "popular" : "recently-added")); }
-    catch (error) { setMessage(errorText(error)); }
-    finally { setLoading(false); }
+    try { const collection = await getCollection(nextFeed === "popular" ? "popular" : "recently-added"); if (request === requestId.current) setApps(collection); }
+    catch (error) { if (request === requestId.current) setMessage(errorText(error)); }
+    finally { if (request === requestId.current) setLoading(false); }
   }
 
   async function runSearch(value: string) {
+    const request = ++requestId.current;
     setSearchErrors([]);
-    if (!value.trim()) { await loadCollection(feed); return; }
+    if (!value.trim()) {
+      setLoading(true); setMessage("");
+      try { const collection = await getCollection(feed === "popular" ? "popular" : "recently-added"); if (request === requestId.current) setApps(collection); }
+      catch (error) { if (request === requestId.current) setMessage(errorText(error)); }
+      finally { if (request === requestId.current) setLoading(false); }
+      return;
+    }
     setLoading(true); setMessage("");
     try {
       const results = await Promise.allSettled(sources.map((source) => source.search(value.trim())));
@@ -285,9 +294,9 @@ export default function App() {
           errors.push({ source: source.label ?? source.name, message: error });
         }
       });
-      setApps(interleave(perSource));
-      setSearchErrors(errors);
-    } finally { setLoading(false); }
+      if (request === requestId.current) { setApps(interleave(perSource)); setSearchErrors(errors); }
+    } catch (error) { if (request === requestId.current) setMessage(errorText(error)); }
+    finally { if (request === requestId.current) setLoading(false); }
   }
 
   async function openDetails(app: StoreApp) {
