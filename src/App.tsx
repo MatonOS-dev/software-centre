@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { FlatList, Linking, View } from "react-native";
 import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Text, RNHostView, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
@@ -14,6 +14,7 @@ import { sourceInfo } from "./sources/PluginSource";
 type Page = "browse" | "installed" | "updates";
 type Feed = "popular" | "new";
 type Repository = { id: string; url: string; label: string; official: boolean; broken: boolean };
+type Operation = { app: StoreApp; id: string; kind: "install" | "update" | "uninstall"; progress: string; percent: number | null };
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
@@ -159,14 +160,13 @@ export default function App() {
   const [selected, setSelected] = useState<StoreApp | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [busyRef, setBusyRef] = useState("");
-  const [progress, setProgress] = useState("");
-  const [percent, setPercent] = useState<number | null>(null);
-  const operationIdRef = useRef("");
-  const operationSourceRef = useRef("");
-  const [operationKind, setOperationKind] = useState<"install" | "update" | "uninstall">("install");
+  const [operations, setOperations] = useState<Record<string, Operation>>({});
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
   const updateIds = useMemo(() => new Set(updateApps.map((app) => `${app.source}:${app.id}`)), [updateApps]);
+  const updateOperation = (ref: string, change: Operation | null) => setOperations((current) => {
+    if (change === null) { const next = { ...current }; delete next[ref]; return next; }
+    return { ...current, [ref]: change };
+  });
 
   async function refreshRepositories(pkg = repoSource) {
     if (!pkg) { setRepositories([]); return; }
@@ -259,40 +259,33 @@ export default function App() {
   }
 
   async function startInstall(app: StoreApp | null = selected) {
-    if (!app || busyRef) return;
+    if (!app || operations[app.ref]) return;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    operationIdRef.current = operationId;
-    operationSourceRef.current = app.source;
-    setOperationKind(installedIds.has(`${app.source}:${app.id}`) ? "update" : "install");
-    setBusyRef(app.ref); setProgress("Preparing installation…"); setPercent(null); setMessage("");
+    const kind = installedIds.has(`${app.source}:${app.id}`) ? "update" : "install";
+    updateOperation(app.ref, { app, id: operationId, kind, progress: "Preparing installation…", percent: null }); setMessage("");
     try {
       await sources.find((source) => source.name === app.source)!.install(app, operationId);
-      if (operationIdRef.current !== operationId) return;
-      setProgress("Downloading and installing…");
-    } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
+      setOperations((current) => current[app.ref]?.id === operationId ? { ...current, [app.ref]: { ...current[app.ref], progress: "Downloading and installing…" } } : current);
+    } catch (error) { updateOperation(app.ref, null); setMessage(errorText(error)); }
   }
 
   async function startUninstall(app: StoreApp | null = selected) {
-    if (!app || busyRef) return;
+    if (!app || operations[app.ref]) return;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    operationIdRef.current = operationId;
-    operationSourceRef.current = app.source;
-    setOperationKind("uninstall");
-    setBusyRef(app.ref); setProgress("Preparing removal…"); setPercent(null); setMessage("");
+    updateOperation(app.ref, { app, id: operationId, kind: "uninstall", progress: "Preparing removal…", percent: null }); setMessage("");
     try {
       await sources.find((source) => source.name === app.source)!.uninstall(app, operationId);
-      if (operationIdRef.current !== operationId) return;
-      setProgress("Removing app…");
-    } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
+      setOperations((current) => current[app.ref]?.id === operationId ? { ...current, [app.ref]: { ...current[app.ref], progress: "Removing app…" } } : current);
+    } catch (error) { updateOperation(app.ref, null); setMessage(errorText(error)); }
   }
 
-  async function cancelOperation() {
-    const operationId = operationIdRef.current;
-    if (!operationId) return;
-    if (operationSourceRef.current) {
-      const source = sources.find((candidate) => candidate.name === operationSourceRef.current);
+  async function cancelOperation(ref: string) {
+    const operation = operations[ref];
+    if (!operation) return;
+    if (operation.app.source) {
+      const source = sources.find((candidate) => candidate.name === operation.app.source);
       if (source?.cancel) {
-        try { await source.cancel(operationId); }
+        try { await source.cancel(operation.id); }
         catch (error) { setMessage(errorText(error)); }
       }
     }
@@ -308,35 +301,54 @@ export default function App() {
   useEffect(() => {
     const handleProgress = (payload: SourceProgress) => {
       if (payload.phase === "complete") {
-        if (!payload.result?.operationId || payload.result.operationId !== operationIdRef.current) return;
-        operationSourceRef.current = "";
-        operationIdRef.current = "";
+        const ref = Object.keys(operations).find((key) => operations[key].id === payload.result?.operationId);
+        if (!ref) return;
         const completed = payload.result;
-        setBusyRef(""); setProgress(""); setPercent(null);
+        updateOperation(ref, null);
         if (!completed?.ok) setMessage(completed?.error || completed?.output?.trim() || "The operation did not complete.");
         else setMessage("Operation complete.");
         void refreshInstalled();
         void refreshUpdates();
         return;
       }
-      if (payload.operationId !== operationIdRef.current) return;
+      const ref = Object.keys(operations).find((key) => operations[key].id === payload.operationId);
+      if (!ref) return;
       // The installer reports -1 for phases without a known fraction.
       const eventPercent = typeof payload.percent === "number" && payload.percent >= 0 ? payload.percent : null;
-      setPercent(eventPercent);
       const done = typeof payload.bytesDone === "number" ? payload.bytesDone : 0;
       const total = typeof payload.bytesTotal === "number" ? payload.bytesTotal : 0;
-      setProgress(progressLabel(payload.phase || "Working…", eventPercent, done, total));
+      setOperations((current) => current[ref]?.id === payload.operationId ? { ...current, [ref]: { ...current[ref], percent: eventPercent, progress: progressLabel(payload.phase || "Working…", eventPercent, done, total) } } : current);
     };
     const subscriptions = sources.map((source) => source.progress(handleProgress));
     return () => subscriptions.forEach((subscription) => subscription.remove());
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resubscribe only when source registry changes
-  }, [sources]);
+  }, [sources, operations]);
 
   useEffect(() => {
     const timer = setTimeout(() => { void refreshInstalled(); void refreshUpdates(); }, 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when the source registry changes
   }, [sources]);
+  useEffect(() => {
+    const pluginOperations = Object.values(operations).filter((operation) => sources.some((source) => source.name === operation.app.source && source.cancel));
+    if (!pluginOperations.length) return;
+    let active = true;
+    const timer = setInterval(() => {
+      for (const operation of pluginOperations) {
+        void MatonOS.sourceRunning(operation.app.source, operation.id).then(async (running) => {
+          if (!active || running) return;
+          console.error(`Store source ${operation.app.source} lost operation ${operation.id}`);
+          try { await MatonOS.sourceCancel(operation.app.source, operation.id); }
+          catch (error) { console.error(`Abandoning lost source operation ${operation.id} failed`, error); }
+          if (active) { updateOperation(operation.app.ref, null); setMessage(`${operation.app.source} lost the operation`); }
+        }).catch((error) => {
+          // A dead binder also emits a terminal result from the native manager.
+          console.error(`Checking source operation ${operation.id} failed`, error);
+        });
+      }
+    }, 5000);
+    return () => { active = false; clearInterval(timer); };
+  }, [operations, sources]);
   async function togglePlugin(plugin: SourcePlugin) {
     try {
       await setPluginEnabled(plugin.package, !plugin.enabled); setPlugins(await MatonOS.sourcePlugins());
@@ -379,9 +391,9 @@ export default function App() {
 
   const renderApp = ({ item }: { item: StoreApp }) => (
     <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }} colorScheme="dark" seedColor="#79c75b">
-      <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(busyRef)}
-        busyLabel={busyRef === item.ref ? busyButtonLabel(operationKind) : ""}
-        progress={busyRef === item.ref ? progress : ""} percent={busyRef === item.ref ? percent : null}
+      <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(operations[item.ref])}
+        busyLabel={operations[item.ref] ? busyButtonLabel(operations[item.ref].kind) : ""}
+        progress={operations[item.ref]?.progress ?? ""} percent={operations[item.ref]?.percent ?? null}
         onOpenDetails={openDetails}
         onInstall={(app) => void startInstall(app)} onUninstall={(app) => void startUninstall(app)} onLaunch={(app) => void launchApp(app)} />
     </Host>
@@ -408,8 +420,8 @@ export default function App() {
     </LazyColumn></Host>;
   } else if (selected) {
     const currentDetail = selected;
-    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(`${currentDetail.source}:${currentDetail.id}`)} updateAvailable={updateIds.has(`${currentDetail.source}:${currentDetail.id}`)} busy={Boolean(busyRef)}
-      busyLabel={busyButtonLabel(operationKind)} progress={busyRef === currentDetail.ref ? progress : ""} percent={busyRef === currentDetail.ref ? percent : null}
+    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(`${currentDetail.source}:${currentDetail.id}`)} updateAvailable={updateIds.has(`${currentDetail.source}:${currentDetail.id}`)} busy={Boolean(operations[currentDetail.ref])}
+      busyLabel={operations[currentDetail.ref] ? busyButtonLabel(operations[currentDetail.ref].kind) : ""} progress={operations[currentDetail.ref]?.progress ?? ""} percent={operations[currentDetail.ref]?.percent ?? null}
       onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} /></Host>;
   } else if (page === "installed" || page === "updates") {
     const entries = page === "installed" ? installedApps : updateApps;
@@ -453,13 +465,11 @@ export default function App() {
           <Button onClick={() => { void MatonOS.sourcePlugins().then(setPlugins).catch((error) => { console.error("Listing plugins failed", error); setMessage(errorText(error)); }); }}><Text>Sources</Text></Button>
           {pluginButtons}
         </Row>
-        <Show when={Boolean(busyRef)}>
-          <Column modifiers={[padding(14, 0, 14, 14)]}>
-            <LinearProgressIndicator progress={percentToRatio(percent)} />
-            <Show when={Boolean(progress)}><Text style={{ typography: "bodyMedium" }} maxLines={2} modifiers={[padding(6, 0, 0, 0)]}>{progress}</Text></Show>
-            <Button onClick={() => void cancelOperation()}><Text>Cancel</Text></Button>
-          </Column>
-        </Show>
+        {Object.values(operations).map((operation) => <Column key={operation.id} modifiers={[padding(14, 0, 14, 14)]}>
+          <LinearProgressIndicator progress={percentToRatio(operation.percent)} />
+          <Text style={{ typography: "bodyMedium" }} maxLines={2} modifiers={[padding(6, 0, 0, 0)]}>{operation.app.name}: {operation.progress}</Text>
+          <Button onClick={() => void cancelOperation(operation.app.ref)}><Text>Cancel {operation.app.name}</Text></Button>
+        </Column>)}
         <Show when={Boolean(message)}><Text style={{ typography: "bodyMedium" }} modifiers={[padding(18, 0, 18, 8)]}>{message}</Text></Show>
       </Column></Host>
       {content}

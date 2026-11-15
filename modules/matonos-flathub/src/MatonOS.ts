@@ -24,6 +24,7 @@ type NativeApi = {
   sourceDelRepo(pkg: string, id: string): Promise<void>;
   sourceInstall(pkg: string, id: string, repo: string, operationId: string): Promise<void>;
   sourceCancel(pkg: string, operationId: string): Promise<void>;
+  sourceRunning(pkg: string, operationId: string): Promise<boolean>;
   sourceUninstall(pkg: string, packageName: string, operationId: string): Promise<void>;
 };
 /** An installed store backend app. Preinstalled ones start enabled, others off. */
@@ -54,6 +55,7 @@ export const MatonOS = {
   sourceDelRepo: (pkg: string, id: string) => Native.sourceDelRepo(pkg, id),
   sourceInstall: (pkg: string, id: string, repo: string, operationId: string) => Native.sourceInstall(pkg, id, repo, operationId),
   sourceCancel: (pkg: string, operationId: string) => Native.sourceCancel(pkg, operationId),
+  sourceRunning: (pkg: string, operationId: string) => Native.sourceRunning(pkg, operationId),
   sourceUninstall: (pkg: string, packageName: string, operationId: string) => Native.sourceUninstall(pkg, packageName, operationId),
   addStoreListener: (listener: (event: StoreEvent) => void) => Native.addListener("linuxAppStoreEvent", listener),
 };

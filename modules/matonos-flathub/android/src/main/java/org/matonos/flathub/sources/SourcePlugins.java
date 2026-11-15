@@ -226,6 +226,18 @@ public final class SourcePlugins {
     try { source(pkg).cancel(operationId); } catch (Exception error) { if (error instanceof RemoteException) throw remoteFailure(pkg, error); throw error; }
   }
 
+  /** Revision 1 keep-alive check. Older sources remain compatible and are treated as running. */
+  public boolean running(String pkg, String operationId) throws Exception {
+    try {
+      ISoftwareSource plugin = source(pkg);
+      if (plugin.info().revision < 1) return true;
+      return plugin.running(operationId);
+    } catch (Exception error) {
+      if (error instanceof RemoteException) throw remoteFailure(pkg, error);
+      throw error;
+    }
+  }
+
   private void commit(String source, String operationId, String packageName, String[] names,
       ParcelFileDescriptor[] files, String[] removeSplits, ICommitResult result) throws Exception {
     int count = files == null ? 0 : files.length;

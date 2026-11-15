@@ -58,6 +58,7 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("sourceDelRepo") { pkg: String, id: String -> sourceCall(pkg) { it.delRepo(id) } }
     AsyncFunction("sourceInstall") { pkg: String, id: String, repo: String, operationId: String -> requirePlugins().install(pkg, id, repo, operationId) }
     AsyncFunction("sourceCancel") { pkg: String, operationId: String -> requirePlugins().cancel(pkg, operationId) }
+    AsyncFunction("sourceRunning") { pkg: String, operationId: String -> requirePlugins().running(pkg, operationId) }
     AsyncFunction("sourceUninstall") { pkg: String, packageName: String, operationId: String ->
       requirePlugins().uninstall(pkg, packageName, operationId)
     }
