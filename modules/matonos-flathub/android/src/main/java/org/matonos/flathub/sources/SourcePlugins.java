@@ -10,6 +10,7 @@ import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.IBinder;
+import android.os.RemoteException;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
@@ -55,6 +56,8 @@ public final class SourcePlugins {
   private final Map<String, Integer> uncommittedSessions = new ConcurrentHashMap<>();
   private final Map<String, Ownership> pendingOwners = new ConcurrentHashMap<>();
   private final Map<String, Completion> completions = new ConcurrentHashMap<>();
+  private final Map<String, String> labels = new ConcurrentHashMap<>();
+  private final Map<String, String> operationSources = new ConcurrentHashMap<>();
 
   public static final class Ownership {
     public final String source, id, repo;
@@ -76,6 +79,43 @@ public final class SourcePlugins {
   public void update(String pkg, String id, String repo, String operationId, Completion completion) throws Exception {
     completions.put(operationId, completion);
     install(pkg, id, repo, operationId);
+  }
+
+  public RuntimeException remoteFailure(String pkg, Exception error) {
+    if (error instanceof android.os.DeadObjectException || error instanceof RemoteException) {
+      String label = labels.getOrDefault(pkg, pkg);
+      Log.e(TAG, "Source binder call failed source=" + pkg + " label=" + label + " error=" + error, error);
+      disconnect(pkg);
+      return new IllegalStateException(label + " stopped", error);
+    }
+    return new IllegalStateException(error.getMessage() == null ? pkg + ": source call failed" : error.getMessage(), error);
+  }
+
+  /** Installed packages whose persisted owner is currently missing or disabled. */
+  public List<Map<String, String>> unavailableOwners() {
+    List<Map<String, String>> out = new ArrayList<>();
+    Map<String, ?> records = context.getSharedPreferences(OWNERS, Context.MODE_PRIVATE).getAll();
+    Map<String, Boolean> enabled = new HashMap<>();
+    for (Map<String, Object> row : list()) enabled.put((String) row.get("package"), (Boolean) row.get("enabled"));
+    PackageManager pm = context.getPackageManager();
+    for (Map.Entry<String, ?> entry : records.entrySet()) {
+      String packageName = entry.getKey();
+      try {
+        pm.getPackageInfo(packageName, 0);
+        org.json.JSONObject value = new org.json.JSONObject(String.valueOf(entry.getValue()));
+        String owner = value.getString("source");
+        if (Boolean.TRUE.equals(enabled.get(owner))) continue;
+        ApplicationInfo app = pm.getApplicationInfo(packageName, 0);
+        Map<String, String> row = new HashMap<>();
+        row.put("packageName", packageName); row.put("source", owner);
+        row.put("id", value.getString("id")); row.put("repo", value.getString("repo"));
+        row.put("name", String.valueOf(pm.getApplicationLabel(app)));
+        out.add(row);
+      } catch (PackageManager.NameNotFoundException missing) {
+        Log.i(TAG, "Owned package no longer installed package=" + packageName);
+      } catch (Exception error) { Log.e(TAG, "Reading unavailable ownership package=" + packageName + " failed", error); }
+    }
+    return out;
   }
 
   public SourcePlugins(Context context, Events events) {
@@ -101,6 +141,7 @@ public final class SourcePlugins {
       row.put("label", String.valueOf(info.loadLabel(pm)));
       row.put("preinstalled", preinstalled);
       row.put("enabled", prefs.getBoolean(app.packageName, preinstalled));
+      labels.put(app.packageName, String.valueOf(info.loadLabel(pm)));
       out.add(row);
     }
     return out;
@@ -136,7 +177,8 @@ public final class SourcePlugins {
   public void install(String pkg, String id, String repo, String operationId) throws Exception {
     uncommittedSessions.remove(operationId);
     pendingOwners.put(operationId, new Ownership(pkg, id, repo));
-    source(pkg).install(id, repo, operationId, new IInstallCallback.Stub() {
+    operationSources.put(operationId, pkg);
+    try { source(pkg).install(id, repo, operationId, new IInstallCallback.Stub() {
       @Override public void progress(String op, String phase, int percent, long done, long total) {
         events.progress(pkg, op, phase, percent, done, total);
       }
@@ -155,17 +197,23 @@ public final class SourcePlugins {
         }
       }
       @Override public void done(String op) {
+        operationSources.remove(op);
         Completion completion = completions.remove(op);
         if (completion != null) completion.finish(true, null);
         events.result(pkg, op, true, null);
       }
       @Override public void failed(String op, String error) {
+        operationSources.remove(op);
         Log.e(TAG, pkg + ": install " + id + " failed: " + error);
         pendingOwners.remove(op);
         Completion completion = completions.remove(op); if (completion != null) completion.finish(false, error);
         events.result(pkg, op, false, error);
       }
-    });
+    }); } catch (Exception error) {
+      if (error instanceof RemoteException) throw remoteFailure(pkg, error);
+      operationSources.remove(operationId); pendingOwners.remove(operationId); completions.remove(operationId);
+      throw error;
+    }
   }
 
   /** Stops source work and abandons a session that has not yet been committed. */
@@ -175,7 +223,7 @@ public final class SourcePlugins {
       try { context.getPackageManager().getPackageInstaller().abandonSession(sessionId); }
       catch (Exception error) { Log.e(TAG, "Abandoning uncommitted session=" + sessionId + " op=" + operationId + " failed", error); }
     }
-    source(pkg).cancel(operationId);
+    try { source(pkg).cancel(operationId); } catch (Exception error) { if (error instanceof RemoteException) throw remoteFailure(pkg, error); throw error; }
   }
 
   private void commit(String source, String operationId, String packageName, String[] names,
@@ -261,13 +309,24 @@ public final class SourcePlugins {
   private void disconnect(String pkg) {
     Connection connection = connections.remove(pkg);
     if (connection != null) try { context.unbindService(connection); } catch (Exception error) { Log.e(TAG, "Unbinding source " + pkg + " failed", error); }
+    String label = labels.getOrDefault(pkg, pkg);
+    for (Map.Entry<String, String> entry : new ArrayList<>(operationSources.entrySet())) if (pkg.equals(entry.getValue())) {
+      String op = entry.getKey();
+      if (operationSources.remove(op, pkg)) {
+        pendingOwners.remove(op);
+        Completion completion = completions.remove(op);
+        if (completion != null) completion.finish(false, label + " stopped");
+        events.result(pkg, op, false, label + " stopped");
+        Log.e(TAG, "Failing in-flight source operation source=" + pkg + " op=" + op + " reason=" + label + " stopped");
+      }
+    }
   }
 
-  private static final class Connection implements ServiceConnection {
+  private final class Connection implements ServiceConnection {
     final CountDownLatch ready = new CountDownLatch(1);
     volatile IBinder binder;
     @Override public void onServiceConnected(ComponentName name, IBinder service) { binder = service; ready.countDown(); }
-    @Override public void onServiceDisconnected(ComponentName name) { Log.e(TAG, "Source disconnected: " + name); binder = null; }
-    @Override public void onBindingDied(ComponentName name) { Log.e(TAG, "Source binding died: " + name); binder = null; }
+    @Override public void onServiceDisconnected(ComponentName name) { Log.e(TAG, "Source disconnected: " + name); binder = null; disconnect(name.getPackageName()); }
+    @Override public void onBindingDied(ComponentName name) { Log.e(TAG, "Source binding died: " + name); binder = null; disconnect(name.getPackageName()); }
   }
 }

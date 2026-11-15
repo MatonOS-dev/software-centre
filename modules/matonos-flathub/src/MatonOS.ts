@@ -11,6 +11,7 @@ type NativeApi = {
   startStubUpdate(ref: string, operationId: string | null): Promise<boolean>;
   launchStub(appId: string): Promise<boolean>;
   sourcePlugins(): Promise<SourcePlugin[]>;
+  sourceUnavailableOwners(): Promise<string>;
   setSourceEnabled(pkg: string, enabled: boolean): Promise<void>;
   sourceInfo(pkg: string): Promise<string>;
   sourceSearch(pkg: string, term: string, offset: number, limit: number): Promise<string>;
@@ -39,6 +40,7 @@ export const MatonOS = {
   storeListInstalled: () => Native.storeListInstalled(),
   storeListRemotes: () => Native.storeListRemotes(),
   sourcePlugins: () => Native.sourcePlugins(),
+  sourceUnavailableOwners: () => Native.sourceUnavailableOwners(),
   setSourceEnabled: (pkg: string, enabled: boolean) => Native.setSourceEnabled(pkg, enabled),
   sourceInfo: (pkg: string) => Native.sourceInfo(pkg),
   sourceSearch: (pkg: string, term: string, offset: number, limit: number) => Native.sourceSearch(pkg, term, offset, limit),

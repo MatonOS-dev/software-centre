@@ -30,6 +30,7 @@ function AppIcon({ app, imageSize }: { app: StoreApp; imageSize: number }) {
 }
 
 function SourceBadge({ app }: { app: StoreApp }) {
+  if (app.sourceUnavailable) return <Text style={{ typography: "bodySmall" }}>source unavailable</Text>;
   return <Text style={{ typography: "labelSmall" }}>{app.source}</Text>;
 }
 
@@ -79,10 +80,10 @@ function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, p
   onLaunch: (app: StoreApp) => void;
 }) {
   const isBusy = busy && Boolean(progress);
-  const buttonLabel = isBusy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? app.source === "Flathub" ? "Open" : "Uninstall" : "Install";
+  const buttonLabel = app.sourceUnavailable ? "Unavailable" : isBusy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? app.source === "Flathub" ? "Open" : "Uninstall" : "Install";
   const buttonAction = updateAvailable ? () => onInstall(app) : installed ? app.source === "Flathub" ? () => onLaunch(app) : () => onUninstall(app) : () => onInstall(app);
   return (
-    <Column modifiers={[clickable(() => onOpenDetails(app))]}>
+    <Column modifiers={app.sourceUnavailable ? [] : [clickable(() => onOpenDetails(app))]}>
       <Row verticalAlignment="center" modifiers={[paddingAll(12)]}>
         <AppIcon app={app} imageSize={52} />
         <Column modifiers={[weight(1), padding(12, 0, 12, 0)]}>
@@ -90,7 +91,7 @@ function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, p
           <SourceBadge app={app} />
           <Text style={{ typography: "bodyMedium" }} maxLines={2}>{app.summary}</Text>
         </Column>
-        <Button enabled={!busy} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
+        <Button enabled={!busy && !app.sourceUnavailable} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
       </Row>
       <Show when={isBusy}>
         <LinearProgressIndicator progress={percentToRatio(percent)} modifiers={[padding(0, 12, 12, 12)]} />
@@ -214,7 +215,12 @@ export default function App() {
   async function refreshInstalled() {
     setInstalledError("");
     try {
-      const entries = (await Promise.all(sources.map((source) => source.installed()))).flat();
+      const entries = (await Promise.all(sources.map((source) => source.installed().catch((error) => {
+        console.error(`${source.name}: listing installed apps failed`, error);
+        return [] as StoreApp[];
+      })))).flat();
+      const unavailable = JSON.parse(await MatonOS.sourceUnavailableOwners()) as Array<{ packageName: string; source: string; id: string; name: string }>;
+      entries.push(...unavailable.map((owned) => ({ id: owned.id, source: owned.source, name: owned.name, summary: "Installed app; its source is unavailable.", icon: "", developer: "", description: "", screenshots: [], permissions: [], ref: owned.packageName, packageName: owned.packageName, sourceUnavailable: true })));
       setInstalledApps(entries);
     } catch (error) {
       setInstalledApps([]); setInstalledError(errorText(error));

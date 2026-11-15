@@ -53,6 +53,7 @@ export type StoreApp = AppDetails & {
   candidates?: StoreApp[];
   /** Android package to uninstall when it differs from id (plugin sources). */
   packageName?: string;
+  sourceUnavailable?: boolean;
 };
 
 export function toListing(app: StoreApp): AppListing {

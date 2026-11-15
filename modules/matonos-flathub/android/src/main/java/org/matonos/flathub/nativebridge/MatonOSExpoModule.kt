@@ -46,15 +46,16 @@ class MatonOSExpoModule : Module() {
     // Store source plugins (SOURCE-PLUGINS.md). Calls return the plugin's JSON as-is.
     AsyncFunction("sourcePlugins") { requirePlugins().list() }
     AsyncFunction("setSourceEnabled") { pkg: String, enabled: Boolean -> requirePlugins().setEnabled(pkg, enabled) }
-    AsyncFunction("sourceInfo") { pkg: String -> json.toJson(requirePlugins().source(pkg).info()) }
-    AsyncFunction("sourceSearch") { pkg: String, term: String, offset: Int, limit: Int -> json.toJson(requirePlugins().source(pkg).search(term, offset, limit)) }
-    AsyncFunction("sourceDetails") { pkg: String, id: String, repo: String -> json.toJson(requirePlugins().source(pkg).details(id, repo)) }
-    AsyncFunction("sourceReviews") { pkg: String, id: String, offset: Int, limit: Int -> json.toJson(requirePlugins().source(pkg).reviews(id, offset, limit)) }
-    AsyncFunction("sourceInstalled") { pkg: String, offset: Int, limit: Int -> json.toJson(requirePlugins().source(pkg).installed(offset, limit)) }
-    AsyncFunction("sourceUpdates") { pkg: String, offset: Int, limit: Int -> json.toJson(requirePlugins().source(pkg).updates(offset, limit)) }
-    AsyncFunction("sourceRepos") { pkg: String, offset: Int, limit: Int -> json.toJson(requirePlugins().source(pkg).repos(offset, limit)) }
-    AsyncFunction("sourceAddRepo") { pkg: String, url: String -> requirePlugins().source(pkg).addRepo(url) }
-    AsyncFunction("sourceDelRepo") { pkg: String, id: String -> requirePlugins().source(pkg).delRepo(id) }
+    AsyncFunction("sourceInfo") { pkg: String -> json.toJson(sourceCall(pkg) { it.info() }) }
+    AsyncFunction("sourceUnavailableOwners") { json.toJson(requirePlugins().unavailableOwners()) }
+    AsyncFunction("sourceSearch") { pkg: String, term: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.search(term, offset, limit) }) }
+    AsyncFunction("sourceDetails") { pkg: String, id: String, repo: String -> json.toJson(sourceCall(pkg) { it.details(id, repo) }) }
+    AsyncFunction("sourceReviews") { pkg: String, id: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.reviews(id, offset, limit) }) }
+    AsyncFunction("sourceInstalled") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.installed(offset, limit) }) }
+    AsyncFunction("sourceUpdates") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.updates(offset, limit) }) }
+    AsyncFunction("sourceRepos") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.repos(offset, limit) }) }
+    AsyncFunction("sourceAddRepo") { pkg: String, url: String -> sourceCall(pkg) { it.addRepo(url) } }
+    AsyncFunction("sourceDelRepo") { pkg: String, id: String -> sourceCall(pkg) { it.delRepo(id) } }
     AsyncFunction("sourceInstall") { pkg: String, id: String, repo: String, operationId: String -> requirePlugins().install(pkg, id, repo, operationId) }
     AsyncFunction("sourceCancel") { pkg: String, operationId: String -> requirePlugins().cancel(pkg, operationId) }
     AsyncFunction("sourceUninstall") { pkg: String, packageName: String, operationId: String ->
@@ -93,6 +94,15 @@ class MatonOSExpoModule : Module() {
       .putExtra(SourceInstallReceiver.EXTRA_SOURCE, source)
     return android.app.PendingIntent.getBroadcast(context, (operationId + kind).hashCode(), intent,
       android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE)
+  }
+
+  private inline fun <T> sourceCall(pkg: String, call: (org.matonos.store.source.ISoftwareSource) -> T): T {
+    val manager = requirePlugins()
+    try { return call(manager.source(pkg)) }
+    catch (error: Exception) {
+      if (error is android.os.RemoteException) throw manager.remoteFailure(pkg, error)
+      throw error
+    }
   }
 
   private abstract inner class Callback : ILinuxAppStoreCallback.Stub() {
