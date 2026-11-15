@@ -15,7 +15,7 @@ if (!moduleConfig.android?.modules?.some((name) => name.endsWith("MatonOSExpoMod
   throw new Error("MatonOS bridge adapter is not registered for Android.");
 }
 const plugin = fs.readFileSync(path.join(root, "plugins/withMatonFlathub.js"), "utf8");
-for (const marker of ["minSdkVersion 32", "abiFilters", "MATON_SIGNING_STORE_FILE", "matonos-client"]) {
+for (const marker of ["minSdkVersion 32", "abiFilters", "MATON_SIGNING_STORE_FILE"]) {
   if (!plugin.includes(marker)) throw new Error(`Missing build configuration: ${marker}`);
 }
 const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));

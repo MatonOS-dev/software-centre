@@ -1,15 +1,8 @@
 const fs = require("fs");
 const path = require("path");
-const { withAndroidManifest, withAppBuildGradle, withDangerousMod, withGradleProperties, withSettingsGradle } = require("@expo/config-plugins");
+const { withAndroidManifest, withAppBuildGradle, withDangerousMod, withGradleProperties } = require("@expo/config-plugins");
 
 module.exports = function withMatonFlathub(config) {
-  config = withSettingsGradle(config, (mod) => {
-    const marker = 'include(":matonos-client")';
-    if (!mod.modResults.contents.includes(marker)) {
-      mod.modResults.contents += `\n${marker}\nproject(":matonos-client").projectDir = file("../../../buildinfra/client")\n`;
-    }
-    return mod;
-  });
   config = withGradleProperties(config, (mod) => {
     const entry = mod.modResults.find((item) => item.type === "property" && item.key === "reactNativeArchitectures");
     if (entry) entry.value = "x86_64";

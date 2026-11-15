@@ -22,7 +22,6 @@ index-client host test is `store-sources/fdroid/test-host.sh`. Fresh-image
 runtime checks and known limitations are in the plugin README.
 
 ## Building
-This repository is checked out as `rn-apps/flathub` in the MatonOS device tree
-(github.com/MatonOS-dev/MatonOS) and built by its `tools/build-apps.sh`; it uses
-the tree's `buildinfra/client` library. Clone with `--recurse-submodules` (the
-plugin contract lives in the `contract/` submodule).
+Standalone: clone with `--recurse-submodules` (the plugin contract lives in the
+`contract/` submodule). In MatonOS it is checked out as `rn-apps/flathub` in the
+device tree and built by its `tools/build-apps.sh`.
