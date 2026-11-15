@@ -46,7 +46,12 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
   const list = async (call: string, getter: (offset: number, limit: number) => Promise<string>) =>
     Promise.all((await pages<PluginApp>(getter, pkg, call)).map(async (app) => {
       const result = toApp(pkg, app);
-      result.origin = await repoUrl(result.repo ?? "1");
+      try { result.origin = await repoUrl(result.repo ?? "1"); }
+      catch (error) {
+        // Repository metadata is decoration; a repo index failure must not hide a valid listing.
+        console.error(`${pkg}: resolving repository ${result.repo} for ${result.id} failed`, error);
+        result.origin = result.repo ?? "1";
+      }
       result.repository = result.origin;
       return result;
     }));

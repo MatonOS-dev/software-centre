@@ -11,7 +11,7 @@ import type { SourcePlugin } from "../modules/matonos-flathub/src/MatonOS";
 import type { SourceProgress } from "./sources/Source";
 import { sourceInfo } from "./sources/PluginSource";
 
-type Page = "browse" | "installed" | "updates";
+type Page = "browse" | "installed" | "updates" | "sources";
 type Feed = "popular" | "new";
 type Repository = { id: string; url: string; label: string; official: boolean; broken: boolean };
 type Operation = { app: StoreApp; id: string; kind: "install" | "update" | "uninstall"; progress: string; percent: number | null };
@@ -33,6 +33,17 @@ function AppIcon({ app, imageSize }: { app: StoreApp; imageSize: number }) {
 function SourceBadge({ app }: { app: StoreApp }) {
   if (app.sourceUnavailable) return <Text style={{ typography: "bodySmall" }}>source unavailable</Text>;
   return <Text style={{ typography: "labelSmall" }}>{app.source}</Text>;
+}
+
+function SourceRow({ plugin, onToggle }: { plugin: SourcePlugin; onToggle: (plugin: SourcePlugin) => void }) {
+  return <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 12 }} modifiers={[paddingAll(12)]}>
+    <Column modifiers={[weight(1)]}>
+      <Text style={{ typography: "titleMedium" }}>{plugin.label}</Text>
+      <Text style={{ typography: "bodySmall" }}>{plugin.package}</Text>
+      <Text style={{ typography: "bodySmall" }}>{plugin.enabled ? "Enabled" : "Disabled"}</Text>
+    </Column>
+    <Button onClick={() => onToggle(plugin)}><Text>{plugin.enabled ? "Disable" : "Enable"}</Text></Button>
+  </Row>;
 }
 
 function ProgressLine({ progress }: { progress: string }) {
@@ -160,6 +171,7 @@ export default function App() {
   const [selected, setSelected] = useState<StoreApp | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [searchErrors, setSearchErrors] = useState<Array<{ source: string; message: string }>>([]);
   const [operations, setOperations] = useState<Record<string, Operation>>({});
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
   const updateIds = useMemo(() => new Set(updateApps.map((app) => `${app.source}:${app.id}`)), [updateApps]);
@@ -242,14 +254,25 @@ export default function App() {
   }
 
   async function runSearch(value: string) {
+    setSearchErrors([]);
     if (!value.trim()) { await loadCollection(feed); return; }
     setLoading(true); setMessage("");
     try {
-      const results = await Promise.all(sources.map((source) => source.search(value.trim())));
-      setApps(results.flat());
-    }
-    catch (error) { setMessage(errorText(error)); }
-    finally { setLoading(false); }
+      const results = await Promise.allSettled(sources.map((source) => source.search(value.trim())));
+      const found: StoreApp[] = [];
+      const errors: Array<{ source: string; message: string }> = [];
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") found.push(...result.value);
+        else {
+          const source = sources[index];
+          const error = errorText(result.reason);
+          console.error(`${source.name}: search failed`, result.reason);
+          errors.push({ source: source.label ?? source.name, message: error });
+        }
+      });
+      setApps(found);
+      setSearchErrors(errors);
+    } finally { setLoading(false); }
   }
 
   async function openDetails(app: StoreApp) {
@@ -362,13 +385,14 @@ export default function App() {
   }
   async function openRepositorySource(pkg: string) { setRepoSource(pkg); setRepoManager(true); setSelected(null); setRepoError(""); await refreshRepositories(pkg); }
   const repositoryButtons = repositorySources.map((source) => <Button key={source.name} onClick={() => void openRepositorySource(source.name)}><Text>{source.label ?? source.name} repositories</Text></Button>);
-  const pluginButtons = plugins.map((plugin) => <Button key={plugin.package} onClick={() => void togglePlugin(plugin)}><Text>{plugin.enabled ? "Disable" : "Enable"} {plugin.label}</Text></Button>);
   const repositoryRows = repositories.map((repository) => <Column key={repository.id} modifiers={[paddingAll(10)]}>
     <Text style={{ typography: "titleMedium" }}>{repository.label}</Text>
     <Text style={{ typography: "bodySmall" }}>{repository.url}</Text>
     <Text style={{ typography: "bodySmall" }}>{repository.broken ? "Broken: index verification or download failed." : "Trusted repository"}</Text>
     <Show when={!repository.official}><Button onClick={() => void removeRepository(repository.id)}><Text>Remove repository</Text></Button></Show>
   </Column>);
+  const sourceRows = plugins.map((plugin) => <SourceRow key={plugin.package} plugin={plugin} onToggle={(item) => void togglePlugin(item)} />);
+  const searchErrorRows = searchErrors.map((error) => <Host key={error.source} matchContents={{ vertical: true }} colorScheme="dark"><Text style={{ typography: "bodySmall" }} modifiers={[paddingAll(12)]}>{error.source} search failed: {error.message}</Text></Host>);
 
   async function selectFeed(next: Feed) {
     setFeed(next); await loadCollection(next);
@@ -379,6 +403,10 @@ export default function App() {
     if (next === "installed") await refreshInstalled();
     if (next === "updates") await refreshUpdates();
     if (next === "browse") await loadCollection(feed);
+    if (next === "sources") {
+      try { setPlugins(await MatonOS.sourcePlugins()); }
+      catch (error) { setMessage(errorText(error)); }
+    }
   }
 
   async function launchApp(app: StoreApp) {
@@ -423,6 +451,15 @@ export default function App() {
     content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(`${currentDetail.source}:${currentDetail.id}`)} updateAvailable={updateIds.has(`${currentDetail.source}:${currentDetail.id}`)} busy={Boolean(operations[currentDetail.ref])}
       busyLabel={operations[currentDetail.ref] ? busyButtonLabel(operations[currentDetail.ref].kind) : ""} progress={operations[currentDetail.ref]?.progress ?? ""} percent={operations[currentDetail.ref]?.percent ?? null}
       onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} /></Host>;
+  } else if (page === "sources") {
+    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
+      <Text style={{ typography: "headlineSmall" }}>Sources</Text>
+      <Text style={{ typography: "bodyMedium" }}>Choose which app catalogs the Software Center searches.</Text>
+      {sourceRows}
+      <Text style={{ typography: "titleLarge" }}>Repositories</Text>
+      <Text style={{ typography: "bodyMedium" }}>Manage repositories provided by enabled sources.</Text>
+      {repositoryButtons}
+    </LazyColumn></Host>;
   } else if (page === "installed" || page === "updates") {
     const entries = page === "installed" ? installedApps : updateApps;
     const heading = page === "installed" ? "Installed apps" : "Updates";
@@ -449,7 +486,8 @@ export default function App() {
       </Column></Host>
       <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={apps} renderItem={renderApp} keyExtractor={keyApp}
         ListHeaderComponent={loading ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(16)]}>Loading apps…</Text></Host> : null}
-        ListEmptyComponent={!loading ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text></Host> : null} />
+        ListEmptyComponent={!loading && !searchErrors.length ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text></Host> : null} />
+      {searchErrorRows}
     </View>;
   }
 
@@ -461,9 +499,7 @@ export default function App() {
           <Button onClick={() => void selectPage("browse")}><Text>Browse</Text></Button>
           <Button onClick={() => void selectPage("installed")}><Text>Installed</Text></Button>
           <Button onClick={() => void selectPage("updates")}><Text>Updates</Text></Button>
-          {repositoryButtons}
-          <Button onClick={() => { void MatonOS.sourcePlugins().then(setPlugins).catch((error) => { console.error("Listing plugins failed", error); setMessage(errorText(error)); }); }}><Text>Sources</Text></Button>
-          {pluginButtons}
+          <Button onClick={() => void selectPage("sources")}><Text>Sources</Text></Button>
         </Row>
         {Object.values(operations).map((operation) => <Column key={operation.id} modifiers={[padding(14, 0, 14, 14)]}>
           <LinearProgressIndicator progress={percentToRatio(operation.percent)} />
