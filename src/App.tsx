@@ -377,6 +377,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when the source registry changes
   }, [sources]);
   useEffect(() => {
+    // Packages can be removed outside the store (Settings, pm uninstall).
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") { void refreshInstalled(); void refreshUpdates(); }
+    });
+    return () => subscription.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh functions read current sources
+  }, [sources]);
+  useEffect(() => {
     const pluginOperations = Object.values(operations).filter((operation) => sources.some((source) => source.name === operation.app.source && source.cancel));
     if (!pluginOperations.length) return;
     let active = true;
