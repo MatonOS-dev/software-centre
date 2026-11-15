@@ -8,6 +8,8 @@ export type SourceName = string;
 export type AppListing = {
   id: string;
   source: SourceName;
+  /** Human-readable source name shown on listings; falls back to `source`. */
+  sourceLabel?: string;
   name: string;
   summary: string;
   icon: string;

@@ -30,9 +30,19 @@ function AppIcon({ app, imageSize }: { app: StoreApp; imageSize: number }) {
   return <ComposeImage source={{ uri: app.icon }} contentDescription={`${app.name} icon`} modifiers={[size(imageSize, imageSize)]} />;
 }
 
+/** Round-robin merge so each source's best matches appear near the top. */
+function interleave(lists: StoreApp[][]): StoreApp[] {
+  const merged: StoreApp[] = [];
+  const longest = Math.max(0, ...lists.map((list) => list.length));
+  for (let index = 0; index < longest; index++) {
+    for (const list of lists) if (index < list.length) merged.push(list[index]);
+  }
+  return merged;
+}
+
 function SourceBadge({ app }: { app: StoreApp }) {
   if (app.sourceUnavailable) return <Text style={{ typography: "bodySmall" }}>source unavailable</Text>;
-  return <Text style={{ typography: "labelSmall" }}>{app.source}</Text>;
+  return <Text style={{ typography: "labelSmall" }}>{app.sourceLabel ?? app.source}</Text>;
 }
 
 function SourceRow({ plugin, onToggle }: { plugin: SourcePlugin; onToggle: (plugin: SourcePlugin) => void }) {
@@ -259,10 +269,10 @@ export default function App() {
     setLoading(true); setMessage("");
     try {
       const results = await Promise.allSettled(sources.map((source) => source.search(value.trim())));
-      const found: StoreApp[] = [];
+      const perSource: StoreApp[][] = [];
       const errors: Array<{ source: string; message: string }> = [];
       results.forEach((result, index) => {
-        if (result.status === "fulfilled") found.push(...result.value);
+        if (result.status === "fulfilled") perSource.push(result.value);
         else {
           const source = sources[index];
           const error = errorText(result.reason);
@@ -270,7 +280,7 @@ export default function App() {
           errors.push({ source: source.label ?? source.name, message: error });
         }
       });
-      setApps(found);
+      setApps(interleave(perSource));
       setSearchErrors(errors);
     } finally { setLoading(false); }
   }

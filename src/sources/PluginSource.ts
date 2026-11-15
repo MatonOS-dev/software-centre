@@ -13,10 +13,10 @@ type PluginApp = { id: string; name: string; summary: string; icon: string; deve
 function parse<T>(plugin: string, call: string, json: string): T {
   try { return JSON.parse(json) as T; } catch (error) { throw new Error(`${plugin}: ${call} returned invalid JSON`, { cause: error }); }
 }
-function toApp(plugin: string, app: PluginApp): StoreApp {
+function toApp(plugin: string, app: PluginApp, label?: string): StoreApp {
   const repo = app.repo ?? "1";
   return { ...app, description: app.description ?? "", screenshots: app.screenshots ?? [], permissions: app.permissions ?? [], source: plugin,
-    ref: app.id, repo, origin: repo, repository: repo };
+    ref: app.id, repo, origin: repo, repository: repo, sourceLabel: label };
 }
 async function pages<T>(call: (offset: number, limit: number) => Promise<string>, plugin: string, name: string): Promise<T[]> {
   const result: T[] = [];
@@ -45,7 +45,7 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
   };
   const list = async (call: string, getter: (offset: number, limit: number) => Promise<string>) =>
     Promise.all((await pages<PluginApp>(getter, pkg, call)).map(async (app) => {
-      const result = toApp(pkg, app);
+      const result = toApp(pkg, app, label);
       try { result.origin = await repoUrl(result.repo ?? "1"); }
       catch (error) {
         // Repository metadata is decoration; a repo index failure must not hide a valid listing.
@@ -60,7 +60,7 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
     async search(term) { return groupCandidates(pkg, await list("search", (offset, limit) => MatonOS.sourceSearch(pkg, term, offset, limit))); },
     async details(app) {
       const { listing, ...details } = parse<PluginApp & { listing: PluginApp }>(pkg, "details", await MatonOS.sourceDetails(pkg, app.id, app.repo ?? "1"));
-      const result = toApp(pkg, { ...listing, ...details, repo: app.repo ?? listing.repo });
+      const result = toApp(pkg, { ...listing, ...details, repo: app.repo ?? listing.repo }, label);
       result.origin = await repoUrl(result.repo ?? "1");
       result.repository = result.origin;
       return result;
