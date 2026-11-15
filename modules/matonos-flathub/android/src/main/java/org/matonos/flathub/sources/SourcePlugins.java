@@ -39,6 +39,7 @@ public final class SourcePlugins {
   public static final String BIND_PERMISSION = "org.matonos.permission.BIND_STORE_SOURCE";
   private static final String TAG = "SourcePlugins";
   private static final String PREFS = "source-plugins";
+  private static final String OWNERS = "source-ownership";
   private static final long BIND_TIMEOUT_S = 20;
 
   public interface Events {
@@ -52,6 +53,30 @@ public final class SourcePlugins {
   private final Events events;
   private final Map<String, Connection> connections = new ConcurrentHashMap<>();
   private final Map<String, Integer> uncommittedSessions = new ConcurrentHashMap<>();
+  private final Map<String, Ownership> pendingOwners = new ConcurrentHashMap<>();
+  private final Map<String, Completion> completions = new ConcurrentHashMap<>();
+
+  public static final class Ownership {
+    public final String source, id, repo;
+    Ownership(String source, String id, String repo) { this.source = source; this.id = id; this.repo = repo; }
+  }
+  public interface Completion { void finish(boolean ok, String reason); }
+  public Ownership owner(String packageName) {
+    String value = context.getSharedPreferences(OWNERS, Context.MODE_PRIVATE).getString(packageName, null);
+    if (value == null) return null;
+    try { org.json.JSONObject o = new org.json.JSONObject(value); return new Ownership(o.getString("source"), o.getString("id"), o.getString("repo")); }
+    catch (Exception e) { Log.e(TAG, "Invalid ownership record package=" + packageName, e); return null; }
+  }
+  private void recordOwner(String packageName, Ownership owner) {
+    try { context.getSharedPreferences(OWNERS, Context.MODE_PRIVATE).edit().putString(packageName,
+        new org.json.JSONObject().put("source", owner.source).put("id", owner.id).put("repo", owner.repo).toString()).apply(); }
+    catch (Exception e) { Log.e(TAG, "Recording owner package=" + packageName + " failed", e); }
+  }
+
+  public void update(String pkg, String id, String repo, String operationId, Completion completion) throws Exception {
+    completions.put(operationId, completion);
+    install(pkg, id, repo, operationId);
+  }
 
   public SourcePlugins(Context context, Events events) {
     this.context = context.getApplicationContext();
@@ -110,6 +135,7 @@ public final class SourcePlugins {
 
   public void install(String pkg, String id, String repo, String operationId) throws Exception {
     uncommittedSessions.remove(operationId);
+    pendingOwners.put(operationId, new Ownership(pkg, id, repo));
     source(pkg).install(id, repo, operationId, new IInstallCallback.Stub() {
       @Override public void progress(String op, String phase, int percent, long done, long total) {
         events.progress(pkg, op, phase, percent, done, total);
@@ -128,9 +154,15 @@ public final class SourcePlugins {
           }
         }
       }
-      @Override public void done(String op) { events.result(pkg, op, true, null); }
+      @Override public void done(String op) {
+        Completion completion = completions.remove(op);
+        if (completion != null) completion.finish(true, null);
+        events.result(pkg, op, true, null);
+      }
       @Override public void failed(String op, String error) {
         Log.e(TAG, pkg + ": install " + id + " failed: " + error);
+        pendingOwners.remove(op);
+        Completion completion = completions.remove(op); if (completion != null) completion.finish(false, error);
         events.result(pkg, op, false, error);
       }
     });
@@ -176,7 +208,13 @@ public final class SourcePlugins {
       }
       if (removeSplits != null) for (String split : removeSplits) session.removeSplit(split);
       events.progress(source, operationId, "Installing " + packageName, -1, -1, -1);
-      session.commit(resultSender(sessionId, result));
+      ICommitResult tracked = new ICommitResult.Stub() {
+        @Override public void result(boolean ok, String error) {
+          if (ok) { Ownership own = pendingOwners.get(operationId); if (own != null) recordOwner(packageName, own); }
+          try { result.result(ok, error); } catch (Exception e) { Log.e(TAG, "Relaying commit outcome op=" + operationId + " package=" + packageName + " failed", e); }
+        }
+      };
+      session.commit(resultSender(sessionId, tracked));
       uncommittedSessions.remove(operationId, sessionId);
     } catch (Exception error) {
       uncommittedSessions.remove(operationId, sessionId);

@@ -68,6 +68,7 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
     updates: () => list("updates", (offset, limit) => MatonOS.sourceUpdates(pkg, offset, limit)),
     install: (app, operationId) => MatonOS.sourceInstall(pkg, app.id, app.repo ?? "1", operationId),
     uninstall: (app, operationId) => MatonOS.sourceUninstall(pkg, app.packageName ?? app.id, operationId),
+    cancel: (operationId) => MatonOS.sourceCancel(pkg, operationId),
     progress(listener: (event: SourceProgress) => void) {
       return MatonOS.addStoreListener((event) => { if (event.source === pkg) listener(event); });
     },

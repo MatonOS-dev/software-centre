@@ -90,6 +90,7 @@ export interface Source {
   updates(): Promise<StoreApp[]>;
   install(app: StoreApp, operationId: string): Promise<void>;
   uninstall(app: StoreApp, operationId: string): Promise<void>;
+  cancel?(operationId: string): Promise<void>;
   /** Optional: sources without a reviews backend leave it out. */
   reviews?(app: StoreApp): Promise<Review[]>;
   /** Optional: fills app.rating for a batch of results. */

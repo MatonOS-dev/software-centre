@@ -23,6 +23,9 @@
     </intent>
   </queries>
   <application>
+    <service android:name="org.matonos.flathub.sources.StoreSourceService" android:exported="true">
+      <intent-filter><action android:name="org.matonos.store.STORE" /></intent-filter>
+    </service>
     <receiver android:name="org.matonos.flathub.nativebridge.SourceInstallReceiver" android:exported="false" />
   </application>
 </manifest>

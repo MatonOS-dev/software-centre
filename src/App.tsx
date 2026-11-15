@@ -162,6 +162,7 @@ export default function App() {
   const [progress, setProgress] = useState("");
   const [percent, setPercent] = useState<number | null>(null);
   const operationIdRef = useRef("");
+  const operationSourceRef = useRef("");
   const [operationKind, setOperationKind] = useState<"install" | "update" | "uninstall">("install");
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
   const updateIds = useMemo(() => new Set(updateApps.map((app) => `${app.source}:${app.id}`)), [updateApps]);
@@ -255,6 +256,7 @@ export default function App() {
     if (!app || busyRef) return;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     operationIdRef.current = operationId;
+    operationSourceRef.current = app.source;
     setOperationKind(installedIds.has(`${app.source}:${app.id}`) ? "update" : "install");
     setBusyRef(app.ref); setProgress("Preparing installation…"); setPercent(null); setMessage("");
     try {
@@ -268,6 +270,7 @@ export default function App() {
     if (!app || busyRef) return;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     operationIdRef.current = operationId;
+    operationSourceRef.current = app.source;
     setOperationKind("uninstall");
     setBusyRef(app.ref); setProgress("Preparing removal…"); setPercent(null); setMessage("");
     try {
@@ -275,6 +278,18 @@ export default function App() {
       if (operationIdRef.current !== operationId) return;
       setProgress("Removing app…");
     } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
+  }
+
+  async function cancelOperation() {
+    const operationId = operationIdRef.current;
+    if (!operationId) return;
+    if (operationSourceRef.current) {
+      const source = sources.find((candidate) => candidate.name === operationSourceRef.current);
+      if (source?.cancel) {
+        try { await source.cancel(operationId); }
+        catch (error) { setMessage(errorText(error)); }
+      }
+    }
   }
 
   useEffect(() => {
@@ -288,6 +303,7 @@ export default function App() {
     const handleProgress = (payload: SourceProgress) => {
       if (payload.phase === "complete") {
         if (!payload.result?.operationId || payload.result.operationId !== operationIdRef.current) return;
+        operationSourceRef.current = "";
         operationIdRef.current = "";
         const completed = payload.result;
         setBusyRef(""); setProgress(""); setPercent(null);
@@ -435,6 +451,7 @@ export default function App() {
           <Column modifiers={[padding(14, 0, 14, 14)]}>
             <LinearProgressIndicator progress={percentToRatio(percent)} />
             <Show when={Boolean(progress)}><Text style={{ typography: "bodyMedium" }} maxLines={2} modifiers={[padding(6, 0, 0, 0)]}>{progress}</Text></Show>
+            <Button onClick={() => void cancelOperation()}><Text>Cancel</Text></Button>
           </Column>
         </Show>
         <Show when={Boolean(message)}><Text style={{ typography: "bodyMedium" }} modifiers={[padding(18, 0, 18, 8)]}>{message}</Text></Show>
