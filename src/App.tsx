@@ -40,6 +40,14 @@ function interleave(lists: StoreApp[][]): StoreApp[] {
   return merged;
 }
 
+function OperationBanner({ operation, canCancel, onCancel }: { operation: Operation; canCancel: boolean; onCancel: () => void }) {
+  return <Column modifiers={[padding(14, 0, 14, 14)]}>
+    <LinearProgressIndicator progress={percentToRatio(operation.percent)} />
+    <Text style={{ typography: "bodyMedium" }} maxLines={2} modifiers={[padding(6, 0, 0, 0)]}>{operation.app.name}: {operation.progress}</Text>
+    <Show when={canCancel}><Button onClick={onCancel}><Text>Cancel {operation.app.name}</Text></Button></Show>
+  </Column>;
+}
+
 function SourceBadge({ app }: { app: StoreApp }) {
   if (app.sourceUnavailable) return <Text style={{ typography: "bodySmall" }}>source unavailable</Text>;
   return <Text style={{ typography: "labelSmall" }}>{app.sourceLabel ?? app.source}</Text>;
@@ -501,6 +509,11 @@ export default function App() {
     </View>;
   }
 
+  const operationBanners = Object.values(operations).map((operation) =>
+    <OperationBanner key={operation.id} operation={operation}
+      canCancel={Boolean(sources.find((source) => source.name === operation.app.source)?.cancel)}
+      onCancel={() => void cancelOperation(operation.app.ref)} />);
+
   return (
     <View style={{ flex: 1, backgroundColor: themeColors.background }}>
       <Host matchContents={{ vertical: true }} colorScheme="dark" seedColor="#79c75b"><Column>
@@ -511,11 +524,7 @@ export default function App() {
           <Button onClick={() => void selectPage("updates")}><Text>Updates</Text></Button>
           <Button onClick={() => void selectPage("sources")}><Text>Sources</Text></Button>
         </Row>
-        {Object.values(operations).map((operation) => <Column key={operation.id} modifiers={[padding(14, 0, 14, 14)]}>
-          <LinearProgressIndicator progress={percentToRatio(operation.percent)} />
-          <Text style={{ typography: "bodyMedium" }} maxLines={2} modifiers={[padding(6, 0, 0, 0)]}>{operation.app.name}: {operation.progress}</Text>
-          <Button onClick={() => void cancelOperation(operation.app.ref)}><Text>Cancel {operation.app.name}</Text></Button>
-        </Column>)}
+        {operationBanners}
         <Show when={Boolean(message)}><Text style={{ typography: "bodyMedium" }} modifiers={[padding(18, 0, 18, 8)]}>{message}</Text></Show>
       </Column></Host>
       {content}
