@@ -14,14 +14,15 @@ type NativeApi = {
   setSourceEnabled(pkg: string, enabled: boolean): Promise<void>;
   sourceInfo(pkg: string): Promise<string>;
   sourceSearch(pkg: string, term: string, offset: number, limit: number): Promise<string>;
-  sourceDetails(pkg: string, id: string): Promise<string>;
-  sourceReviews(pkg: string, id: string): Promise<string>;
-  sourceInstalled(pkg: string): Promise<string>;
-  sourceUpdates(pkg: string): Promise<string>;
-  sourceRepos(pkg: string): Promise<string>;
+  sourceDetails(pkg: string, id: string, repo: string): Promise<string>;
+  sourceReviews(pkg: string, id: string, offset: number, limit: number): Promise<string>;
+  sourceInstalled(pkg: string, offset: number, limit: number): Promise<string>;
+  sourceUpdates(pkg: string, offset: number, limit: number): Promise<string>;
+  sourceRepos(pkg: string, offset: number, limit: number): Promise<string>;
   sourceAddRepo(pkg: string, url: string): Promise<void>;
   sourceDelRepo(pkg: string, id: string): Promise<void>;
-  sourceInstall(pkg: string, id: string, operationId: string): Promise<void>;
+  sourceInstall(pkg: string, id: string, repo: string, operationId: string): Promise<void>;
+  sourceCancel(pkg: string, operationId: string): Promise<void>;
   sourceUninstall(pkg: string, packageName: string, operationId: string): Promise<void>;
 };
 /** An installed store backend app. Preinstalled ones start enabled, others off. */
@@ -41,14 +42,16 @@ export const MatonOS = {
   setSourceEnabled: (pkg: string, enabled: boolean) => Native.setSourceEnabled(pkg, enabled),
   sourceInfo: (pkg: string) => Native.sourceInfo(pkg),
   sourceSearch: (pkg: string, term: string, offset: number, limit: number) => Native.sourceSearch(pkg, term, offset, limit),
-  sourceDetails: (pkg: string, id: string) => Native.sourceDetails(pkg, id),
-  sourceReviews: (pkg: string, id: string) => Native.sourceReviews(pkg, id),
-  sourceInstalled: (pkg: string) => Native.sourceInstalled(pkg),
-  sourceUpdates: (pkg: string) => Native.sourceUpdates(pkg),
-  sourceRepos: (pkg: string) => Native.sourceRepos(pkg),
+  sourceDetails: (pkg: string, id: string, repo: string) => Native.sourceDetails(pkg, id, repo),
+  sourceReviews: (pkg: string, id: string, offset: number, limit: number) => Native.sourceReviews(pkg, id, offset, limit),
+  sourceInstalled: (pkg: string, offset: number, limit: number) => Native.sourceInstalled(pkg, offset, limit),
+  sourceUpdates: (pkg: string, offset: number, limit: number) => Native.sourceUpdates(pkg, offset, limit),
+  sourceRepos: (pkg: string, offset: number, limit: number) => Native.sourceRepos(pkg, offset, limit),
+  sourceReposAll: async (pkg: string) => { const all: unknown[] = []; for (let offset = 0; ; offset += 100) { const page = JSON.parse(await Native.sourceRepos(pkg, offset, 100)) as unknown[]; all.push(...page); if (page.length < 100) return JSON.stringify(all); } },
   sourceAddRepo: (pkg: string, url: string) => Native.sourceAddRepo(pkg, url),
   sourceDelRepo: (pkg: string, id: string) => Native.sourceDelRepo(pkg, id),
-  sourceInstall: (pkg: string, id: string, operationId: string) => Native.sourceInstall(pkg, id, operationId),
+  sourceInstall: (pkg: string, id: string, repo: string, operationId: string) => Native.sourceInstall(pkg, id, repo, operationId),
+  sourceCancel: (pkg: string, operationId: string) => Native.sourceCancel(pkg, operationId),
   sourceUninstall: (pkg: string, packageName: string, operationId: string) => Native.sourceUninstall(pkg, packageName, operationId),
   addStoreListener: (listener: (event: StoreEvent) => void) => Native.addListener("linuxAppStoreEvent", listener),
 };

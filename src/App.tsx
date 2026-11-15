@@ -168,7 +168,7 @@ export default function App() {
 
   async function refreshRepositories(pkg = repoSource) {
     if (!pkg) { setRepositories([]); return; }
-    try { setRepositories(JSON.parse(await MatonOS.sourceRepos(pkg)) as Repository[]); } catch (error) { console.error("Repository operation failed", error); setRepoError(errorText(error)); }
+    try { setRepositories(JSON.parse(await MatonOS.sourceReposAll(pkg)) as Repository[]); } catch (error) { console.error("Repository operation failed", error); setRepoError(errorText(error)); }
   }
 
   const reviewRepository = useCallback(async (url: string, fingerprint: string) => {
@@ -186,7 +186,7 @@ export default function App() {
       if (!info.capabilities.includes("HAS_REPOSITORIES")) throw new Error("The F-Droid plugin does not manage repositories");
       const url = link.searchParams.get("url") || `https://${link.host}${link.pathname}`.replace(/\/$/, "");
       setRepoSource("org.matonos.store.fdroid"); setRepoManager(true); setSelected(null);
-      setRepositories(JSON.parse(await MatonOS.sourceRepos(pkg)) as Repository[]);
+      setRepositories(JSON.parse(await MatonOS.sourceReposAll(pkg)) as Repository[]);
       await reviewRepository(url, link.searchParams.get("fingerprint") || "");
     } catch (error) { console.error("Invalid repository link", error); setRepoError("This F-Droid repository link is invalid."); }
   }, [reviewRepository, setRepoManager, setSelected, setRepoError, setRepoSource, setRepositories]);

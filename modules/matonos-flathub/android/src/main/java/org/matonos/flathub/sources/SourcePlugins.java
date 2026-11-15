@@ -51,6 +51,7 @@ public final class SourcePlugins {
   private final Context context;
   private final Events events;
   private final Map<String, Connection> connections = new ConcurrentHashMap<>();
+  private final Map<String, Integer> uncommittedSessions = new ConcurrentHashMap<>();
 
   public SourcePlugins(Context context, Events events) {
     this.context = context.getApplicationContext();
@@ -107,8 +108,9 @@ public final class SourcePlugins {
     return ISoftwareSource.Stub.asInterface(connection.binder);
   }
 
-  public void install(String pkg, String id, String operationId) throws Exception {
-    source(pkg).install(id, operationId, new IInstallCallback.Stub() {
+  public void install(String pkg, String id, String repo, String operationId) throws Exception {
+    uncommittedSessions.remove(operationId);
+    source(pkg).install(id, repo, operationId, new IInstallCallback.Stub() {
       @Override public void progress(String op, String phase, int percent, long done, long total) {
         events.progress(pkg, op, phase, percent, done, total);
       }
@@ -134,6 +136,16 @@ public final class SourcePlugins {
     });
   }
 
+  /** Stops source work and abandons a session that has not yet been committed. */
+  public void cancel(String pkg, String operationId) throws Exception {
+    Integer sessionId = uncommittedSessions.remove(operationId);
+    if (sessionId != null) {
+      try { context.getPackageManager().getPackageInstaller().abandonSession(sessionId); }
+      catch (Exception error) { Log.e(TAG, "Abandoning uncommitted session=" + sessionId + " op=" + operationId + " failed", error); }
+    }
+    source(pkg).cancel(operationId);
+  }
+
   private void commit(String source, String operationId, String packageName, String[] names,
       ParcelFileDescriptor[] files, String[] removeSplits, ICommitResult result) throws Exception {
     int count = files == null ? 0 : files.length;
@@ -149,6 +161,7 @@ public final class SourcePlugins {
     params.setAppPackageName(packageName);
     params.setRequestUpdateOwnership(true);
     int sessionId = installer.createSession(params);
+    uncommittedSessions.put(operationId, sessionId);
     try (PackageInstaller.Session session = installer.openSession(sessionId)) {
       for (int i = 0; i < count; i++) {
         if (!names[i].matches("[A-Za-z0-9._-]+\\.apk")) throw new IllegalArgumentException("Invalid APK name " + names[i]);
@@ -164,7 +177,9 @@ public final class SourcePlugins {
       if (removeSplits != null) for (String split : removeSplits) session.removeSplit(split);
       events.progress(source, operationId, "Installing " + packageName, -1, -1, -1);
       session.commit(resultSender(sessionId, result));
+      uncommittedSessions.remove(operationId, sessionId);
     } catch (Exception error) {
+      uncommittedSessions.remove(operationId, sessionId);
       try { installer.abandonSession(sessionId); } catch (Exception abandon) { Log.e(TAG, "Abandoning session=" + sessionId + " failed", abandon); }
       throw error;
     }

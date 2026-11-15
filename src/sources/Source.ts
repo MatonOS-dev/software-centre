@@ -19,6 +19,8 @@ export type AppListing = {
   versionName?: string;
   /** Repository the listing came from (F-Droid repo URL, Flatpak remote). */
   origin?: string;
+  repo?: string;
+  candidates?: StoreApp[];
 };
 
 /** What details() returns: everything known about one app. */
@@ -47,6 +49,8 @@ export type StoreApp = AppDetails & {
   apkSha256?: string;
   apkFiles?: Array<{ name: string; sha256: string }>;
   repository?: string;
+  repo?: string;
+  candidates?: StoreApp[];
   /** Android package to uninstall when it differs from id (plugin sources). */
   packageName?: string;
 };
