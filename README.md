@@ -5,7 +5,7 @@
 
 The built-in source is Flathub. Enabled backend apps are loaded through
 `SourcePlugins` and wrapped by `PluginSource`, using the contract in
-[SOURCE-PLUGINS.md](../../store-sources/contract/SOURCE-PLUGINS.md). System plugins start enabled; the
+[SOURCE-PLUGINS.md](contract/SOURCE-PLUGINS.md). System plugins start enabled; the
 Sources controls can toggle them and refresh the session source registry.
 Only plugins advertising `HAS_REPOSITORIES` get repository management.
 
@@ -20,3 +20,9 @@ Checks: `npx tsc --noEmit -p .`, `npx eslint src`, and the release app build
 through `tools/build-apps.sh` (`MATON_APPS_ONLY=matonos-flathub`). The moved
 index-client host test is `store-sources/fdroid/test-host.sh`. Fresh-image
 runtime checks and known limitations are in the plugin README.
+
+## Building
+This repository is checked out as `rn-apps/flathub` in the MatonOS device tree
+(github.com/MatonOS-dev/MatonOS) and built by its `tools/build-apps.sh`; it uses
+the tree's `buildinfra/client` library. Clone with `--recurse-submodules` (the
+plugin contract lives in the `contract/` submodule).
