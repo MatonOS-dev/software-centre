@@ -1,8 +1,20 @@
 import { MatonOS, type SourcePlugin } from "../../modules/matonos-flathub/src/MatonOS";
 import type { Review, Source, SourceProgress, StoreApp } from "./Source";
 
-/** Contract version this store speaks (SOURCE-PLUGINS.md). */
-const CONTRACT_VERSION = 1;
+/** ISoftwareSource.VERSION this store speaks (contract/SOURCE-PLUGINS.md). */
+const CONTRACT_VERSION = 2;
+/** ISoftwareSource.CAP_* bits, in bit order. */
+const CAPABILITIES = ["HAS_REPOSITORIES", "HAS_AGE_RATINGS", "HAS_REVIEWS", "HAS_ANTI_FEATURES", "HAS_PERMISSIONS", "HAS_LOGIN", "REQUIRES_SETUP"];
+/** search() page size; binder transactions are capped at 1 MB. */
+const PAGE = 100;
+
+export type SourceInfo = { version: number; revision: number; name: string; label: string; capabilities: string[] };
+
+/** Decodes SourceInfo JSON from the native module (capabilities bitmask → names). */
+export function sourceInfo(plugin: string, json: string): SourceInfo {
+  const info = parse<{ version: number; revision: number; name: string; label: string; capabilities: number }>(plugin, "info", json);
+  return { ...info, capabilities: CAPABILITIES.filter((_, bit) => (info.capabilities & (1 << bit)) !== 0) };
+}
 
 /** Plugin JSON: details fields are optional on listings. */
 type PluginApp = Omit<StoreApp, "source" | "ref" | "description" | "screenshots" | "permissions">
@@ -26,10 +38,20 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
   const list = async (call: string, json: Promise<string>) => parse<PluginApp[]>(pkg, call, await json).map((app) => toApp(pkg, app));
   return {
     name: pkg, label, capabilities,
-    search: (term) => list("search", MatonOS.sourceSearch(pkg, term)),
-    async details(app) { return toApp(pkg, parse<PluginApp>(pkg, "details", await MatonOS.sourceDetails(pkg, app.id))); },
+    async search(term) {
+      const found: StoreApp[] = [];
+      for (let offset = 0; ; offset += PAGE) {
+        const page = await list("search", MatonOS.sourceSearch(pkg, term, offset, PAGE));
+        found.push(...page);
+        if (page.length < PAGE) return found;
+      }
+    },
+    async details(app) {
+      const { listing, ...details } = parse<PluginApp & { listing: PluginApp }>(pkg, "details", await MatonOS.sourceDetails(pkg, app.id));
+      return toApp(pkg, { ...listing, ...details });
+    },
     async reviews(app) {
-      return parse<Array<Omit<Review, "date"> & { date: string }>>(pkg, "reviews", await MatonOS.sourceReviews(pkg, app.id))
+      return parse<Array<Omit<Review, "date"> & { date: number }>>(pkg, "reviews", await MatonOS.sourceReviews(pkg, app.id))
         .map((review) => ({ ...review, date: new Date(review.date) }));
     },
     installed: () => list("installed", MatonOS.sourceInstalled(pkg)),
@@ -47,9 +69,9 @@ export async function pluginSources(): Promise<Source[]> {
   const plugins = (await MatonOS.sourcePlugins()).filter((plugin) => plugin.enabled);
   const checked = await Promise.all(plugins.map(async (plugin) => {
     try {
-      const info = parse<{ version?: number; label?: string; capabilities?: string[] }>(plugin.package, "info", await MatonOS.sourceInfo(plugin.package));
+      const info = sourceInfo(plugin.package, await MatonOS.sourceInfo(plugin.package));
       if (info.version !== CONTRACT_VERSION) throw new Error(`speaks contract ${info.version}, store speaks ${CONTRACT_VERSION}`);
-      return pluginSource(plugin, info.capabilities ?? [], info.label);
+      return pluginSource(plugin, info.capabilities, info.label);
     } catch (error) {
       console.error(`Store source ${plugin.package} unusable`, error);
       return null;

@@ -9,6 +9,7 @@ import { runApp } from "./FlatpakBridge";
 import { useSources, setPluginEnabled } from "./hooks/useStore";
 import type { SourcePlugin } from "../modules/matonos-flathub/src/MatonOS";
 import type { SourceProgress } from "./sources/Source";
+import { sourceInfo } from "./sources/PluginSource";
 
 type Page = "browse" | "installed" | "updates";
 type Feed = "popular" | "new";
@@ -181,8 +182,8 @@ export default function App() {
       const link = new URL(value);
       if (link.protocol !== "fdroidrepos:") return;
       const pkg = "org.matonos.store.fdroid";
-      const info = JSON.parse(await MatonOS.sourceInfo(pkg)) as { capabilities?: string[] };
-      if (!info.capabilities?.includes("HAS_REPOSITORIES")) throw new Error("The F-Droid plugin does not manage repositories");
+      const info = sourceInfo(pkg, await MatonOS.sourceInfo(pkg));
+      if (!info.capabilities.includes("HAS_REPOSITORIES")) throw new Error("The F-Droid plugin does not manage repositories");
       const url = link.searchParams.get("url") || `https://${link.host}${link.pathname}`.replace(/\/$/, "");
       setRepoSource("org.matonos.store.fdroid"); setRepoManager(true); setSelected(null);
       setRepositories(JSON.parse(await MatonOS.sourceRepos(pkg)) as Repository[]);

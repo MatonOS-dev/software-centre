@@ -11,6 +11,8 @@ import java.util.concurrent.ConcurrentHashMap
 class MatonOSExpoModule : Module() {
   private val storeConnections = ConcurrentHashMap.newKeySet<android.content.ServiceConnection>()
   private var plugins: SourcePlugins? = null
+  /** Contract parcelables → JSON for JS; field names match src/sources/Source.ts. */
+  private val json = com.google.gson.Gson()
 
   override fun definition() = ModuleDefinition {
     Name("MatonOSClient")
@@ -44,13 +46,13 @@ class MatonOSExpoModule : Module() {
     // Store source plugins (SOURCE-PLUGINS.md). Calls return the plugin's JSON as-is.
     AsyncFunction("sourcePlugins") { requirePlugins().list() }
     AsyncFunction("setSourceEnabled") { pkg: String, enabled: Boolean -> requirePlugins().setEnabled(pkg, enabled) }
-    AsyncFunction("sourceInfo") { pkg: String -> requirePlugins().source(pkg).info() }
-    AsyncFunction("sourceSearch") { pkg: String, term: String -> requirePlugins().source(pkg).search(term) }
-    AsyncFunction("sourceDetails") { pkg: String, id: String -> requirePlugins().source(pkg).details(id) }
-    AsyncFunction("sourceReviews") { pkg: String, id: String -> requirePlugins().source(pkg).reviews(id) }
-    AsyncFunction("sourceInstalled") { pkg: String -> requirePlugins().source(pkg).installed() }
-    AsyncFunction("sourceUpdates") { pkg: String -> requirePlugins().source(pkg).updates() }
-    AsyncFunction("sourceRepos") { pkg: String -> requirePlugins().source(pkg).repos() }
+    AsyncFunction("sourceInfo") { pkg: String -> json.toJson(requirePlugins().source(pkg).info()) }
+    AsyncFunction("sourceSearch") { pkg: String, term: String, offset: Int, limit: Int -> json.toJson(requirePlugins().source(pkg).search(term, offset, limit)) }
+    AsyncFunction("sourceDetails") { pkg: String, id: String -> json.toJson(requirePlugins().source(pkg).details(id)) }
+    AsyncFunction("sourceReviews") { pkg: String, id: String -> json.toJson(requirePlugins().source(pkg).reviews(id)) }
+    AsyncFunction("sourceInstalled") { pkg: String -> json.toJson(requirePlugins().source(pkg).installed()) }
+    AsyncFunction("sourceUpdates") { pkg: String -> json.toJson(requirePlugins().source(pkg).updates()) }
+    AsyncFunction("sourceRepos") { pkg: String -> json.toJson(requirePlugins().source(pkg).repos()) }
     AsyncFunction("sourceAddRepo") { pkg: String, url: String -> requirePlugins().source(pkg).addRepo(url) }
     AsyncFunction("sourceDelRepo") { pkg: String, id: String -> requirePlugins().source(pkg).delRepo(id) }
     AsyncFunction("sourceInstall") { pkg: String, id: String, operationId: String -> requirePlugins().install(pkg, id, operationId) }
