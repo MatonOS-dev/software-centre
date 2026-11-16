@@ -40,13 +40,10 @@ function interleave(lists: StoreApp[][]): StoreApp[] {
   return merged;
 }
 
-async function sourceCollection(source: ReturnType<typeof useSources>[number], kind: Feed): Promise<StoreApp[]> {
-  const results: StoreApp[] = [];
-  for (let offset = 0; ; offset += 100) {
-    const page = await source.collection(kind, offset, 100);
-    results.push(...page);
-    if (page.length < 100) return results;
-  }
+// One page per source: a source's whole catalogue (F-Droid "new") would bury the others.
+const COLLECTION_PAGE = 50;
+function sourceCollection(source: ReturnType<typeof useSources>[number], kind: Feed): Promise<StoreApp[]> {
+  return source.collection(kind, 0, COLLECTION_PAGE);
 }
 
 function SourceBadge({ app }: { app: StoreApp }) {
@@ -299,23 +296,7 @@ export default function App() {
     const request = ++requestId.current;
     setSearchErrors([]);
     if (!value.trim()) {
-      setLoading(true); setMessage("");
-      try {
-        const results = await Promise.allSettled(sources.map((source) => sourceCollection(source, feed)));
-        const lists: StoreApp[][] = [];
-        const errors: Array<{ source: string; message: string }> = [];
-        results.forEach((result, index) => {
-          if (result.status === "fulfilled") lists.push(result.value);
-          else {
-            const source = sources[index];
-            console.error(`${source.name}: ${feed} collection failed`, result.reason);
-            errors.push({ source: source.label ?? source.name, message: errorText(result.reason) });
-          }
-        });
-        if (request === requestId.current) { setApps(interleave(lists)); setSearchErrors(errors); }
-      }
-      catch (error) { if (request === requestId.current) setMessage(errorText(error)); }
-      finally { if (request === requestId.current) setLoading(false); }
+      await loadCollection(feed);
       return;
     }
     setLoading(true); setMessage("");
