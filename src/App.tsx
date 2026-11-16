@@ -514,7 +514,7 @@ export default function App() {
         <Button onClick={() => void selectFeed("popular")}><Text>Popular</Text></Button>
         <Button onClick={() => void selectFeed("new")}><Text>New</Text></Button>
       </Row>
-      <OutlinedTextField onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 0, 16, 0)]}>
+      <OutlinedTextField singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 0, 16, 0)]}>
         <OutlinedTextField.Label>Search apps</OutlinedTextField.Label>
       </OutlinedTextField>
       </Column></Host>
