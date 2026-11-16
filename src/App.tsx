@@ -3,7 +3,7 @@ import { AppState, FlatList, Linking, View } from "react-native";
 import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Text, RNHostView, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { clickable, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
-import { getCollection, type StoreApp } from "./FlathubApi";
+import type { StoreApp } from "./sources/Source";
 import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
 import { runApp } from "./FlatpakBridge";
 import { useSources, setPluginEnabled } from "./hooks/useStore";
@@ -38,6 +38,15 @@ function interleave(lists: StoreApp[][]): StoreApp[] {
     for (const list of lists) if (index < list.length) merged.push(list[index]);
   }
   return merged;
+}
+
+async function sourceCollection(source: ReturnType<typeof useSources>[number], kind: Feed): Promise<StoreApp[]> {
+  const results: StoreApp[] = [];
+  for (let offset = 0; ; offset += 100) {
+    const page = await source.collection(kind, offset, 100);
+    results.push(...page);
+    if (page.length < 100) return results;
+  }
 }
 
 function SourceBadge({ app }: { app: StoreApp }) {
@@ -104,8 +113,9 @@ function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, p
   onLaunch: (app: StoreApp) => void;
 }) {
   const isBusy = busy && Boolean(progress);
-  const buttonLabel = app.sourceUnavailable ? "Unavailable" : isBusy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? app.source === "Flathub" ? "Open" : "Uninstall" : "Install";
-  const buttonAction = updateAvailable ? () => onInstall(app) : installed ? app.source === "Flathub" ? () => onLaunch(app) : () => onUninstall(app) : () => onInstall(app);
+  const isFlatpak = app.sourceLabel === "Flatpak";
+  const buttonLabel = app.sourceUnavailable ? "Unavailable" : isBusy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? isFlatpak ? "Open" : "Uninstall" : "Install";
+  const buttonAction = updateAvailable ? () => onInstall(app) : installed ? isFlatpak ? () => onLaunch(app) : () => onUninstall(app) : () => onInstall(app);
   return (
     <Column modifiers={app.sourceUnavailable ? [] : [clickable(() => onOpenDetails(app))]}>
       <Row verticalAlignment="center" modifiers={[paddingAll(12)]}>
@@ -113,6 +123,7 @@ function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, p
         <Column modifiers={[weight(1), padding(12, 0, 12, 0)]}>
           <Text style={{ typography: "titleMedium" }}>{app.name}</Text>
           <SourceBadge app={app} />
+          {app.rating ? <Text style={{ typography: "bodySmall" }}>{app.rating.average.toFixed(1)} / 5 · {app.rating.count} ratings</Text> : null}
           <Text style={{ typography: "bodyMedium" }} maxLines={2}>{app.summary}</Text>
         </Column>
         <Button enabled={!busy && !app.sourceUnavailable} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
@@ -140,6 +151,7 @@ function DetailContent({ app, installed, updateAvailable, busy, busyLabel, progr
         <Column modifiers={[padding(18, 0, 18, 0)]}>
           <Text style={{ typography: "headlineSmall" }}>{app.name}</Text>
           <SourceBadge app={app} />
+          {app.rating ? <Text style={{ typography: "bodySmall" }}>{app.rating.average.toFixed(1)} / 5 · {app.rating.count} ratings</Text> : null}
           <Text style={{ typography: "bodyLarge" }}>{app.summary}</Text>
           <Text style={{ typography: "bodySmall" }}>{app.developer}</Text>
         </Column>
@@ -265,7 +277,20 @@ export default function App() {
   async function loadCollection(nextFeed: Feed) {
     const request = ++requestId.current;
     setLoading(true); setMessage("");
-    try { const collection = await getCollection(nextFeed === "popular" ? "popular" : "recently-added"); if (request === requestId.current) setApps(collection); }
+    try {
+      const results = await Promise.allSettled(sources.map((source) => sourceCollection(source, nextFeed)));
+      const lists: StoreApp[][] = [];
+      const errors: Array<{ source: string; message: string }> = [];
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") lists.push(result.value);
+        else {
+          const source = sources[index];
+          console.error(`${source.name}: ${nextFeed} collection failed`, result.reason);
+          errors.push({ source: source.label ?? source.name, message: errorText(result.reason) });
+        }
+      });
+      if (request === requestId.current) { setApps(interleave(lists)); setSearchErrors(errors); }
+    }
     catch (error) { if (request === requestId.current) setMessage(errorText(error)); }
     finally { if (request === requestId.current) setLoading(false); }
   }
@@ -275,7 +300,20 @@ export default function App() {
     setSearchErrors([]);
     if (!value.trim()) {
       setLoading(true); setMessage("");
-      try { const collection = await getCollection(feed === "popular" ? "popular" : "recently-added"); if (request === requestId.current) setApps(collection); }
+      try {
+        const results = await Promise.allSettled(sources.map((source) => sourceCollection(source, feed)));
+        const lists: StoreApp[][] = [];
+        const errors: Array<{ source: string; message: string }> = [];
+        results.forEach((result, index) => {
+          if (result.status === "fulfilled") lists.push(result.value);
+          else {
+            const source = sources[index];
+            console.error(`${source.name}: ${feed} collection failed`, result.reason);
+            errors.push({ source: source.label ?? source.name, message: errorText(result.reason) });
+          }
+        });
+        if (request === requestId.current) { setApps(interleave(lists)); setSearchErrors(errors); }
+      }
       catch (error) { if (request === requestId.current) setMessage(errorText(error)); }
       finally { if (request === requestId.current) setLoading(false); }
       return;
@@ -339,12 +377,17 @@ export default function App() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => { void loadCollection("popular"); void refreshInstalled(); void refreshUpdates(); void refreshRepositories(); }, 0);
+    const timer = setTimeout(() => { void refreshInstalled(); void refreshUpdates(); void refreshRepositories(); }, 0);
     const initialLink = Linking.getInitialURL().then((url) => { if (url) void handleRepositoryLink(url); });
     const subscription = Linking.addEventListener("url", (event) => void handleRepositoryLink(event.url));
     return () => { clearTimeout(timer); subscription.remove(); void initialLink; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial collection and links; registry changes refresh app lists below
   }, [handleRepositoryLink]);
+  useEffect(() => {
+    const timer = setTimeout(() => { void loadCollection(feed); }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- collection loader is keyed by source registry and feed
+  }, [sources, feed]);
   useEffect(() => {
     const handleProgress = (payload: SourceProgress) => {
       if (payload.phase === "complete") {
@@ -424,17 +467,16 @@ export default function App() {
     <Show when={!repository.official}><Button onClick={() => void removeRepository(repository.id)}><Text>Remove repository</Text></Button></Show>
   </Column>);
   const sourceRows = plugins.map((plugin) => <SourceRow key={plugin.package} plugin={plugin} onToggle={(item) => void togglePlugin(item)} />);
-  const searchErrorRows = searchErrors.map((error) => <Host key={error.source} matchContents={{ vertical: true }} colorScheme="dark"><Text style={{ typography: "bodySmall" }} modifiers={[paddingAll(12)]}>{error.source} search failed: {error.message}</Text></Host>);
+  const searchErrorRows = searchErrors.map((error) => <Host key={error.source} matchContents={{ vertical: true }} colorScheme="dark"><Text style={{ typography: "bodySmall" }} modifiers={[paddingAll(12)]}>{error.source} results failed: {error.message}</Text></Host>);
 
   async function selectFeed(next: Feed) {
-    setFeed(next); await loadCollection(next);
+    setFeed(next);
   }
 
   async function selectPage(next: Page) {
     setPage(next); setSelected(null); setMessage("");
     if (next === "installed") await refreshInstalled();
     if (next === "updates") await refreshUpdates();
-    if (next === "browse") await loadCollection(feed);
     if (next === "sources") {
       try { setPlugins(await MatonOS.sourcePlugins()); }
       catch (error) { setMessage(errorText(error)); }
@@ -444,7 +486,7 @@ export default function App() {
   async function launchApp(app: StoreApp) {
     setMessage("");
     try {
-      await runApp(app.id);
+      await runApp(app.id.split("/")[1] ?? app.id);
       setMessage(`Opening ${app.name}…`);
     } catch (error) { setMessage(errorText(error)); }
   }

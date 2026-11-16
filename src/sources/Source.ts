@@ -88,6 +88,7 @@ export interface Source {
   readonly label?: string;
   readonly capabilities?: string[];
   search(query: string): Promise<StoreApp[]>;
+  collection(kind: "popular" | "new", offset: number, limit: number): Promise<StoreApp[]>;
   details(app: StoreApp): Promise<StoreApp>;
   installed(): Promise<StoreApp[]>;
   updates(): Promise<StoreApp[]>;

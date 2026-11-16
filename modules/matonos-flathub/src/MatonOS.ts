@@ -15,6 +15,7 @@ type NativeApi = {
   setSourceEnabled(pkg: string, enabled: boolean): Promise<void>;
   sourceInfo(pkg: string): Promise<string>;
   sourceSearch(pkg: string, term: string, offset: number, limit: number): Promise<string>;
+  sourceCollection(pkg: string, kind: "popular" | "new", offset: number, limit: number): Promise<string>;
   sourceDetails(pkg: string, id: string, repo: string): Promise<string>;
   sourceReviews(pkg: string, id: string, offset: number, limit: number): Promise<string>;
   sourceInstalled(pkg: string, offset: number, limit: number): Promise<string>;
@@ -45,6 +46,7 @@ export const MatonOS = {
   setSourceEnabled: (pkg: string, enabled: boolean) => Native.setSourceEnabled(pkg, enabled),
   sourceInfo: (pkg: string) => Native.sourceInfo(pkg),
   sourceSearch: (pkg: string, term: string, offset: number, limit: number) => Native.sourceSearch(pkg, term, offset, limit),
+  sourceCollection: (pkg: string, kind: "popular" | "new", offset: number, limit: number) => Native.sourceCollection(pkg, kind, offset, limit),
   sourceDetails: (pkg: string, id: string, repo: string) => Native.sourceDetails(pkg, id, repo),
   sourceReviews: (pkg: string, id: string, offset: number, limit: number) => Native.sourceReviews(pkg, id, offset, limit),
   sourceInstalled: (pkg: string, offset: number, limit: number) => Native.sourceInstalled(pkg, offset, limit),

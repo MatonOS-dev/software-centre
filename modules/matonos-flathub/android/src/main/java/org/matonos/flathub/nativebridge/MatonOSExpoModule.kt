@@ -49,6 +49,7 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("sourceInfo") { pkg: String -> json.toJson(sourceCall(pkg) { it.info() }) }
     AsyncFunction("sourceUnavailableOwners") { json.toJson(requirePlugins().unavailableOwners()) }
     AsyncFunction("sourceSearch") { pkg: String, term: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.search(term, offset, limit) }) }
+    AsyncFunction("sourceCollection") { pkg: String, kind: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.collection(kind, offset, limit) }) }
     AsyncFunction("sourceDetails") { pkg: String, id: String, repo: String -> json.toJson(sourceCall(pkg) { it.details(id, repo) }) }
     AsyncFunction("sourceReviews") { pkg: String, id: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.reviews(id, offset, limit) }) }
     AsyncFunction("sourceInstalled") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.installed(offset, limit) }) }

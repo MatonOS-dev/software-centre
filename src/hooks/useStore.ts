@@ -1,19 +1,18 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { pluginSources } from "../sources/PluginSource";
 import { MatonOS } from "../../modules/matonos-flathub/src/MatonOS";
-import { FlathubSource } from "../sources/FlathubSource";
 import { toDetails, toListing, type AppDetails, type AppListing, type Review, type Source, type SourceName, type StoreApp } from "../sources/Source";
 
 export type * from "../sources/Source";
 
-let SOURCES: Source[] = [FlathubSource];
+let SOURCES: Source[] = [];
 let sourceLoad: Promise<void> | null = null;
 const sourceListeners = new Set<() => void>();
 let progressSubscriptions: Array<{ remove(): void }> = [];
 export function loadSources(): Promise<void> {
   sourceLoad ??= pluginSources().then((plugins) => {
     progressSubscriptions.forEach((subscription) => subscription.remove());
-    SOURCES = [FlathubSource, ...plugins]; installedIds = null;
+    SOURCES = plugins; installedIds = null;
     progressSubscriptions = SOURCES.map((source) => source.progress((event) => { if (event.result) installedIds = null; }));
     sourceListeners.forEach((listener) => listener());
   }).catch((error) => { sourceLoad = null; console.error("Loading source plugins failed", error); throw error; });
