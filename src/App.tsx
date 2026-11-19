@@ -471,14 +471,18 @@ export default function App() {
         <Text style={{ typography: "headlineSmall" }} modifiers={[weight(1)]}>{heading}</Text>
         {updateAllButton(page, updateApps, startInstall)}
       </Row></Host>
-      <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading {page}…</Text></Show>
-      <Show when={Boolean(installedError) && !loading}><Text modifiers={[paddingAll(20)]}>{installedError}</Text></Show>
+      <Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
+        <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading {page}…</Text></Show>
+        <Show when={Boolean(installedError) && !loading}><Text modifiers={[paddingAll(20)]}>{installedError}</Text></Show>
+      </Host>
       <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={entries} renderItem={renderApp} keyExtractor={keyApp}
         ListEmptyComponent={installedEmptyState(page, loading, installedError)} />
     </View>;
   } else if (searchText.trim()) {
     content = <View style={{ flex: 1 }}>
-      <Show when={loading}><Text modifiers={[paddingAll(16)]}>Searching…</Text></Show>
+      <Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
+        <Show when={loading}><Text modifiers={[paddingAll(16)]}>Searching…</Text></Show>
+      </Host>
       <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={apps} renderItem={renderApp} keyExtractor={keyApp}
         ListEmptyComponent={searchEmptyState(loading, searchErrors, message)} />
       {searchErrorRows}
@@ -496,7 +500,9 @@ export default function App() {
       <Host matchContents={{ vertical: true }}><OutlinedTextField value={searchNative} singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 12, 16, 12)]}>
         <OutlinedTextField.Label>Search apps</OutlinedTextField.Label>
       </OutlinedTextField></Host>
-      <Show when={repoManager}><Text style={{ typography: "titleMedium" }} modifiers={[padding(16, 0, 16, 0)]}>{plugins.find((plugin) => plugin.package === repoSource)?.label ?? "Source settings"}</Text></Show>
+      <Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
+        <Show when={repoManager}><Text style={{ typography: "titleMedium" }} modifiers={[padding(16, 0, 16, 0)]}>{plugins.find((plugin) => plugin.package === repoSource)?.label ?? "Source settings"}</Text></Show>
+      </Host>
       {content}
     </View>
   </View>;

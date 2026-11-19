@@ -1,4 +1,4 @@
-import { Button, Column, Row, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
+import { Button, Column, Host, Row, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { padding, paddingAll } from "@expo/ui/jetpack-compose/modifiers";
 import { MaterialSymbol } from "./MaterialSymbol";
 import type { ReactNode } from "react";
@@ -35,7 +35,7 @@ export function StoreNavRail({ page, updateCount, onSelect }: { page: StorePage;
       {updateCountBadge(item.page, updateCount, colors.primary)}
     </Row>
   </Button>);
-  return <Column modifiers={[paddingAll(8)]} verticalArrangement={{ spacedBy: 6 }}>
+  return <Host><Column modifiers={[paddingAll(8)]} verticalArrangement={{ spacedBy: 6 }}>
     {rows}
-  </Column>;
+  </Column></Host>;
 }
