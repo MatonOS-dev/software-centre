@@ -498,7 +498,7 @@ export default function App() {
     <StoreNavRail page={navigationPage(repoManager, page)} updateCount={updateApps.length} onSelect={(next) => void selectPage(next)} />
     <View style={{ flex: 1 }}>
       <Host matchContents={{ vertical: true }}><OutlinedTextField value={searchNative} singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 12, 16, 12)]}>
-        <OutlinedTextField.Label>Search apps</OutlinedTextField.Label>
+        <OutlinedTextField.Placeholder>Search apps</OutlinedTextField.Placeholder>
       </OutlinedTextField></Host>
       <Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
         <Show when={repoManager}><Text style={{ typography: "titleMedium" }} modifiers={[padding(16, 0, 16, 0)]}>{plugins.find((plugin) => plugin.package === repoSource)?.label ?? "Source settings"}</Text></Show>

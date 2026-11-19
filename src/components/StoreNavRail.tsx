@@ -1,5 +1,5 @@
-import { Button, Column, Host, Row, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
-import { padding, paddingAll } from "@expo/ui/jetpack-compose/modifiers";
+import { Column, Host, Shape, Surface, Text, useMaterialColors, type ShapeJSXElement } from "@expo/ui/jetpack-compose";
+import { paddingAll, fillMaxWidth } from "@expo/ui/jetpack-compose/modifiers";
 import { MaterialSymbol } from "./MaterialSymbol";
 import type { ReactNode } from "react";
 
@@ -16,25 +16,19 @@ function updateCountBadge(itemPage: StorePage, updateCount: number, color: strin
   return <Text style={{ typography: "labelSmall" }} color={color}>{String(updateCount)}</Text>;
 }
 
-function itemTextStyle(active: boolean) {
-  if (active) return { typography: "titleSmall" as const };
-  return { typography: "bodyMedium" as const };
-}
-
-function itemTint(active: boolean, primary: string, onSurfaceVariant: string): string {
-  if (active) return primary;
-  return onSurfaceVariant;
-}
-
 export function StoreNavRail({ page, updateCount, onSelect }: { page: StorePage; updateCount: number; onSelect: (page: StorePage) => void }) {
   const colors = useMaterialColors();
-  const rows = items.map((item) => <Button key={item.page} onClick={() => onSelect(item.page)}>
-    <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 12 }} modifiers={[padding(12, 12, 12, 12)]}>
-      <MaterialSymbol name={item.symbol} tint={itemTint(page === item.page, colors.primary, colors.onSurfaceVariant)} />
-      <Text style={itemTextStyle(page === item.page)}>{item.title}</Text>
-      {updateCountBadge(item.page, updateCount, colors.primary)}
-    </Row>
-  </Button>);
+  const rows = items.map((item) => {
+    const selected = page === item.page;
+    const content = <Column horizontalAlignment="center" verticalArrangement={{ spacedBy: 4 }} modifiers={[paddingAll(8)]}>
+      <Surface color={selected ? colors.secondaryContainer : "transparent"} contentColor={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant} shape={<Shape.Pill /> as ShapeJSXElement}>
+        <Host matchContents><MaterialSymbol name={item.symbol} tint={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant} /></Host>
+      </Surface>
+      <Text style={{ typography: "labelMedium" }} color={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant}>{item.title}</Text>
+      {updateCountBadge(item.page, updateCount, selected ? colors.onSecondaryContainer : colors.onSurfaceVariant)}
+    </Column>;
+    return <Surface key={item.page} onClick={() => onSelect(item.page)} color="transparent" contentColor={colors.onSurfaceVariant} modifiers={[fillMaxWidth()]}>{content}</Surface>;
+  });
   return <Host matchContents style={{ height: "100%" }}><Column modifiers={[paddingAll(8)]} verticalArrangement={{ spacedBy: 6 }}>
     {rows}
   </Column></Host>;

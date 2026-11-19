@@ -14,6 +14,9 @@ export function MaterialSymbol({ name, size = 22, tint, description }: { name: s
     if (!resolved.has(name)) {
       let request = pending.get(name);
       if (!request) {
+        // Expo's Material Symbol source is rasterized from the MaterialSymbols font;
+        // expo-symbols and expo-font are direct app dependencies so the font asset
+        // is included in the release bundle instead of relying on transitive modules.
         request = unstable_getMaterialSymbolSourceAsync(name as AndroidSymbol, size, "#000000");
         pending.set(name, request);
       }
