@@ -1,5 +1,5 @@
-import { Column, Host, Row, Shape, Surface, Text, useMaterialColors, type ShapeJSXElement } from "@expo/ui/jetpack-compose";
-import { paddingAll, fillMaxWidth, weight } from "@expo/ui/jetpack-compose/modifiers";
+import { Column, FilledTonalButton, Host, Row, Text, TextButton, useMaterialColors } from "@expo/ui/jetpack-compose";
+import { fillMaxWidth, paddingAll } from "@expo/ui/jetpack-compose/modifiers";
 import { MaterialSymbol } from "./MaterialSymbol";
 import type { ReactNode } from "react";
 
@@ -16,21 +16,26 @@ function updateCountBadge(itemPage: StorePage, updateCount: number, color: strin
   return <Text style={{ typography: "labelSmall" }} color={color}>{String(updateCount)}</Text>;
 }
 
-export function StoreNavRail({ page, updateCount, onSelect }: { page: StorePage; updateCount: number; onSelect: (page: StorePage) => void }) {
+// Same pattern as MatonOS Settings NavItem: Icon + Text in one Row inside a button,
+// all within the rail's single Host (a nested Host escapes the Compose layout).
+function NavItem({ item, selected, updateCount, onSelect }: { item: (typeof items)[number]; selected: boolean; updateCount: number; onSelect: (page: StorePage) => void }) {
   const colors = useMaterialColors();
-  const rows = items.map((item) => {
-    const selected = page === item.page;
-    const foreground = selected ? colors.onSecondaryContainer : colors.onSurfaceVariant;
-    const content = <Surface color={selected ? colors.secondaryContainer : "transparent"} contentColor={foreground} shape={<Shape.Pill /> as ShapeJSXElement} modifiers={[fillMaxWidth()]}>
-      <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }} modifiers={[paddingAll(10)]}>
-        <Host matchContents><MaterialSymbol name={item.symbol} tint={foreground} /></Host>
-        <Text modifiers={[weight(1)]} style={{ typography: "labelMedium" }} color={foreground}>{item.title}</Text>
-        {updateCountBadge(item.page, updateCount, foreground)}
-      </Row>
-    </Surface>;
-    return <Surface key={item.page} onClick={() => onSelect(item.page)} color="transparent" contentColor={foreground} modifiers={[fillMaxWidth()]}>{content}</Surface>;
-  });
-  return <Host style={{ width: 144, height: "100%" }}><Column modifiers={[paddingAll(12)]} verticalArrangement={{ spacedBy: 8 }}>
+  const foreground = selected ? colors.onSecondaryContainer : colors.onSurfaceVariant;
+  const content = <Row modifiers={[fillMaxWidth(), paddingAll(4)]} verticalAlignment="center" horizontalArrangement={{ spacedBy: 12 }}>
+    <MaterialSymbol name={item.symbol} tint={foreground} description={item.title} />
+    <Text style={{ typography: "labelLarge" }} color={foreground}>{item.title}</Text>
+    {updateCountBadge(item.page, updateCount, foreground)}
+  </Row>;
+  const onClick = () => onSelect(item.page);
+  if (selected) {
+    return <FilledTonalButton onClick={onClick} colors={{ containerColor: colors.secondaryContainer, contentColor: colors.onSecondaryContainer }} modifiers={[fillMaxWidth()]}>{content}</FilledTonalButton>;
+  }
+  return <TextButton onClick={onClick} colors={{ contentColor: colors.onSurfaceVariant }} modifiers={[fillMaxWidth()]}>{content}</TextButton>;
+}
+
+export function StoreNavRail({ page, updateCount, onSelect }: { page: StorePage; updateCount: number; onSelect: (page: StorePage) => void }) {
+  const rows = items.map((item) => <NavItem key={item.page} item={item} selected={page === item.page} updateCount={updateCount} onSelect={onSelect} />);
+  return <Host style={{ width: 184, height: "100%" }}><Column modifiers={[paddingAll(12)]} verticalArrangement={{ spacedBy: 8 }}>
     {rows}
   </Column></Host>;
 }
