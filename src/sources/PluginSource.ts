@@ -60,7 +60,14 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
   };
   const decorate = async (app: PluginApp) => {
       const result = toApp(pkg, app, label);
-      try { const metadata = await repoUrl(result.repo ?? "1"); result.origin = metadata.url; }
+      try {
+        const metadata = await repoUrl(result.repo ?? "1"); result.origin = metadata.url;
+        if (result.installed && result.repo && !(result.repoOptions ?? []).some((option) => option.repoId === result.repo)) {
+          const hasBackendOptions = result.repoOptions !== undefined;
+          result.repoOptions = [...(result.repoOptions ?? []), { repoId: result.repo, name: metadata.label, installable: !hasBackendOptions,
+            ...(hasBackendOptions ? { note: "Installed repository is no longer an available update source" } : {}) }];
+        }
+      }
       catch (error) {
         // Repository metadata is decoration; a repo index failure must not hide a valid listing.
         console.error(`${pkg}: resolving repository ${result.repo} for ${result.id} failed`, error);

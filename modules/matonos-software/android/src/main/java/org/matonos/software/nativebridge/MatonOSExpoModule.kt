@@ -32,9 +32,15 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("setSourceEnabled") { pkg: String, enabled: Boolean -> requirePlugins().setEnabled(pkg, enabled) }
     AsyncFunction("sourceInfo") { pkg: String -> json.toJson(sourceCall(pkg) { it.info() }) }
     AsyncFunction("sourceUnavailableOwners") { json.toJson(requirePlugins().unavailableOwners()) }
-    AsyncFunction("sourceSearch") { pkg: String, term: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.search(term, offset, limit) }) }
-    AsyncFunction("sourceCollection") { pkg: String, kind: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.collection(kind, offset, limit) }) }
-    AsyncFunction("sourcePopularApps") { pkg: String, limit: Int -> json.toJson(sourceCall(pkg) { it.getPopularApps(limit) }) }
+    AsyncFunction("sourceSearch") { pkg: String, term: String, offset: Int, limit: Int ->
+      val rows = sourceCall(pkg) { it.search(term, offset, limit) }; applyStoredOrigins(pkg, rows); json.toJson(rows)
+    }
+    AsyncFunction("sourceCollection") { pkg: String, kind: String, offset: Int, limit: Int ->
+      val rows = sourceCall(pkg) { it.collection(kind, offset, limit) }; applyStoredOrigins(pkg, rows); json.toJson(rows)
+    }
+    AsyncFunction("sourcePopularApps") { pkg: String, limit: Int ->
+      val rows = sourceCall(pkg) { it.getPopularApps(limit) }; applyStoredOrigins(pkg, rows.map { it.app }.toTypedArray()); json.toJson(rows)
+    }
     AsyncFunction("sourceSetRepoEnabled") { pkg: String, id: String, enabled: Boolean -> sourceCall(pkg) { it.setRepoEnabled(id, enabled) } }
     AsyncFunction("describeAndroidPermissions") { names: List<String> ->
       val context = requireNotNull(appContext.reactContext)
@@ -82,10 +88,16 @@ class MatonOSExpoModule : Module() {
       context.startActivity(intent)
       true
     }
-    AsyncFunction("sourceDetails") { pkg: String, id: String, repo: String -> json.toJson(sourceCall(pkg) { it.details(id, repo) }) }
+    AsyncFunction("sourceDetails") { pkg: String, id: String, repo: String ->
+      val details = sourceCall(pkg) { it.details(id, repo) }; applyStoredOrigins(pkg, arrayOf(details.listing)); json.toJson(details)
+    }
     AsyncFunction("sourceReviews") { pkg: String, id: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.reviews(id, offset, limit) }) }
-    AsyncFunction("sourceInstalled") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.installed(offset, limit) }) }
-    AsyncFunction("sourceUpdates") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.updates(offset, limit) }) }
+    AsyncFunction("sourceInstalled") { pkg: String, offset: Int, limit: Int ->
+      val rows = sourceCall(pkg) { it.installed(offset, limit) }; applyStoredOrigins(pkg, rows); json.toJson(rows)
+    }
+    AsyncFunction("sourceUpdates") { pkg: String, offset: Int, limit: Int ->
+      val rows = sourceCall(pkg) { it.updates(offset, limit) }; applyStoredOrigins(pkg, rows); json.toJson(rows)
+    }
     AsyncFunction("sourceRepos") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.repos(offset, limit) }) }
     AsyncFunction("sourceAddRepo") { pkg: String, url: String -> sourceCall(pkg) { it.addRepo(url) } }
     AsyncFunction("sourceAddRepoNamed") { pkg: String, name: String, url: String -> sourceCall(pkg) { source ->
@@ -100,6 +112,15 @@ class MatonOSExpoModule : Module() {
       requirePlugins().uninstall(pkg, packageName, operationId)
     }
 
+  }
+
+  private fun applyStoredOrigins(pkg: String, rows: Array<org.matonos.store.source.types.AppListing>) {
+    val manager = requirePlugins()
+    rows.forEach { row ->
+      val packageName = row.packageName?.takeIf { it.isNotBlank() } ?: row.id
+      val owner = manager.owner(packageName)
+      if (owner?.source == pkg) { row.repo = owner.repo; row.installed = true }
+    }
   }
 
   private fun packageResultIntent(context: android.content.Context, operationId: String, kind: String, source: String): android.app.PendingIntent {
