@@ -35,7 +35,7 @@ export function StoreNavRail({ page, updateCount, onSelect }: { page: StorePage;
       {updateCountBadge(item.page, updateCount, colors.primary)}
     </Row>
   </Button>);
-  return <Host><Column modifiers={[paddingAll(8)]} verticalArrangement={{ spacedBy: 6 }}>
+  return <Host matchContents style={{ height: "100%" }}><Column modifiers={[paddingAll(8)]} verticalArrangement={{ spacedBy: 6 }}>
     {rows}
   </Column></Host>;
 }
