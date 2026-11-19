@@ -1,7 +1,8 @@
 import { MatonOS, type SourcePlugin } from "../../modules/matonos-software/src/MatonOS";
-import type { Review, Source, SourceProgress, StoreApp } from "./Source";
+import type { Review, ScoredApp, Source, SourceProgress, StoreApp } from "./Source";
 
 const CONTRACT_VERSION = 2;
+const POPULAR_REVISION = 3;
 const CAPABILITIES = ["HAS_REPOSITORIES", "HAS_AGE_RATINGS", "HAS_REVIEWS", "HAS_ANTI_FEATURES", "HAS_PERMISSIONS", "HAS_LOGIN", "REQUIRES_SETUP"];
 const PAGE = 100;
 export type SourceInfo = { version: number; revision: number; name: string; label: string; capabilities: string[] };
@@ -68,6 +69,14 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
       if (revision < 2) return [];
       const page = parse<PluginApp[]>(pkg, "collection", await MatonOS.sourceCollection(pkg, kind, offset, limit));
       return groupCandidates(pkg, await Promise.all(page.map(decorate)));
+    },
+    async getPopularApps(limit): Promise<ScoredApp[]> {
+      if (revision < POPULAR_REVISION) {
+        console.error(`${pkg}: popular apps skipped; source contract revision ${revision} has no scored popularity call`);
+        return [];
+      }
+      const rows = parse<Array<{ app: PluginApp; score: number }>>(pkg, "popularApps", await MatonOS.sourcePopularApps(pkg, limit));
+      return Promise.all(rows.map(async ({ app, score }) => ({ app: await decorate(app), score })));
     },
     async details(app) {
       const { listing, ...details } = parse<PluginApp & { listing: PluginApp }>(pkg, "details", await MatonOS.sourceDetails(pkg, app.id, app.repo ?? "1"));

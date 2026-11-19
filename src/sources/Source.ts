@@ -56,7 +56,9 @@ export type StoreApp = AppDetails & {
   /** Android package to uninstall when it differs from id (plugin sources). */
   packageName?: string;
   sourceUnavailable?: boolean;
+  added?: number | string;
 };
+export type ScoredApp = { app: StoreApp; score: number };
 
 export function toListing(app: StoreApp): AppListing {
   return { id: app.id, source: app.source, name: app.name, summary: app.summary, icon: app.icon, developer: app.developer,
@@ -89,6 +91,7 @@ export interface Source {
   readonly capabilities?: string[];
   search(query: string): Promise<StoreApp[]>;
   collection(kind: "popular" | "new", offset: number, limit: number): Promise<StoreApp[]>;
+  getPopularApps?(limit: number): Promise<ScoredApp[]>;
   details(app: StoreApp): Promise<StoreApp>;
   installed(): Promise<StoreApp[]>;
   updates(): Promise<StoreApp[]>;

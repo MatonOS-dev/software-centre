@@ -56,12 +56,64 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("sourceUnavailableOwners") { json.toJson(requirePlugins().unavailableOwners()) }
     AsyncFunction("sourceSearch") { pkg: String, term: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.search(term, offset, limit) }) }
     AsyncFunction("sourceCollection") { pkg: String, kind: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.collection(kind, offset, limit) }) }
+    AsyncFunction("sourcePopularApps") { pkg: String, limit: Int -> json.toJson(sourceCall(pkg) { it.getPopularApps(limit) }) }
+    AsyncFunction("sourceSetRepoEnabled") { pkg: String, id: String, enabled: Boolean -> sourceCall(pkg) { it.setRepoEnabled(id, enabled) } }
+    AsyncFunction("describeAndroidPermissions") { names: List<String> ->
+      val context = requireNotNull(appContext.reactContext)
+      json.toJson(names.distinct().map { name ->
+        try {
+          val permission = context.packageManager.getPermissionInfo(name, 0)
+          mapOf(
+            "name" to name,
+            "label" to permission.loadLabel(context.packageManager).toString(),
+            "group" to permission.group,
+            "groupLabel" to permission.group?.let { group ->
+              try { context.packageManager.getPermissionGroupInfo(group, 0).loadLabel(context.packageManager).toString() }
+              catch (_: android.content.pm.PackageManager.NameNotFoundException) { group }
+            },
+            "dangerous" to ((permission.protectionLevel and android.content.pm.PermissionInfo.PROTECTION_MASK_BASE) == android.content.pm.PermissionInfo.PROTECTION_DANGEROUS),
+          )
+        } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+          mapOf("name" to name, "label" to null, "group" to null, "groupLabel" to null, "dangerous" to false)
+        }
+      })
+    }
+    AsyncFunction("sourceIcon") { pkg: String ->
+      val context = requireNotNull(appContext.reactContext)
+      try {
+        val drawable = context.packageManager.getApplicationIcon(pkg)
+        val bitmap = android.graphics.Bitmap.createBitmap(96, 96, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        val directory = java.io.File(context.cacheDir, "software-source-icons").apply { mkdirs() }
+        val image = java.io.File(directory, "${pkg.hashCode()}.png")
+        java.io.FileOutputStream(image).use { output -> bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output) }
+        bitmap.recycle()
+        android.net.Uri.fromFile(image).toString()
+      } catch (error: android.content.pm.PackageManager.NameNotFoundException) {
+        android.util.Log.e("MatonOSStore", "Source package icon unavailable package=$pkg", error)
+        null
+      }
+    }
+    AsyncFunction("launchAndroidApp") { packageName: String ->
+      val context = requireNotNull(appContext.reactContext)
+      val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+        ?: throw IllegalArgumentException("No launch activity for installed package $packageName")
+      intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+      context.startActivity(intent)
+      true
+    }
     AsyncFunction("sourceDetails") { pkg: String, id: String, repo: String -> json.toJson(sourceCall(pkg) { it.details(id, repo) }) }
     AsyncFunction("sourceReviews") { pkg: String, id: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.reviews(id, offset, limit) }) }
     AsyncFunction("sourceInstalled") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.installed(offset, limit) }) }
     AsyncFunction("sourceUpdates") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.updates(offset, limit) }) }
     AsyncFunction("sourceRepos") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.repos(offset, limit) }) }
     AsyncFunction("sourceAddRepo") { pkg: String, url: String -> sourceCall(pkg) { it.addRepo(url) } }
+    AsyncFunction("sourceAddRepoNamed") { pkg: String, name: String, url: String -> sourceCall(pkg) { source ->
+      if (source.info().revision >= 6) source.addRepoNamed(name, url)
+      else { android.util.Log.w("MatonOSStore", "Source $pkg contract revision ${source.info().revision} ignores repository name"); source.addRepo(url) }
+    } }
     AsyncFunction("sourceDelRepo") { pkg: String, id: String -> sourceCall(pkg) { it.delRepo(id) } }
     AsyncFunction("sourceInstall") { pkg: String, id: String, repo: String, operationId: String -> requirePlugins().install(pkg, id, repo, operationId) }
     AsyncFunction("sourceCancel") { pkg: String, operationId: String -> requirePlugins().cancel(pkg, operationId) }

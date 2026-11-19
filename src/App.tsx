@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AppState, FlatList, Linking, View } from "react-native";
-import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Text, RNHostView, useNativeState } from "@expo/ui/jetpack-compose";
+import { AppState, FlatList, Linking, ScrollView, View } from "react-native";
+import { AlertDialog, Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Switch, Text, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
-import { clickable, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
-import type { StoreApp } from "./sources/Source";
+import { clickable, padding, paddingAll, size, weight } from "@expo/ui/jetpack-compose/modifiers";
+import type { ScoredApp, StoreApp } from "./sources/Source";
 import { MatonOS } from "../modules/matonos-software/src/MatonOS";
 import { runApp } from "./FlatpakBridge";
 import { useSources, setPluginEnabled } from "./hooks/useStore";
 import type { SourcePlugin } from "../modules/matonos-software/src/MatonOS";
 import type { SourceProgress } from "./sources/Source";
 import { sourceInfo } from "./sources/PluginSource";
+import { StorePage, StoreNavRail } from "./components/StoreNavRail";
+import { StoreSourceRow } from "./components/StoreSourceRow";
+import { AppGridSection } from "./components/AppGridSection";
+import { DetailScreen } from "./screens/DetailScreen";
 
-type Page = "browse" | "installed" | "updates" | "sources";
-type Feed = "popular" | "new";
-type Repository = { id: string; url: string; label: string; official: boolean; broken: boolean };
-type Operation = { app: StoreApp; id: string; kind: "install" | "update" | "uninstall"; progress: string; percent: number | null };
+type Repository = { id: string; url: string; label: string; official: boolean; broken: boolean; enabled?: boolean; appCount?: number; lastRefreshed?: number };
+type Operation = { app: StoreApp; id: string; kind: "install" | "update" | "uninstall"; progress: string; percent: number | null; error?: string };
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
@@ -40,26 +42,44 @@ function interleave(lists: StoreApp[][]): StoreApp[] {
   return merged;
 }
 
-// One page per source: a source's whole catalogue (F-Droid "new") would bury the others.
-const COLLECTION_PAGE = 50;
-function sourceCollection(source: ReturnType<typeof useSources>[number], kind: Feed): Promise<StoreApp[]> {
-  return source.collection(kind, 0, COLLECTION_PAGE);
+function mergePopular(lists: ScoredApp[][]): StoreApp[] {
+  const groups = new Map<number, ScoredApp[][]>();
+  for (let sourceIndex = 0; sourceIndex < lists.length; sourceIndex++) {
+    for (const entry of lists[sourceIndex]) {
+      const score = Math.round(entry.score * 10) / 10;
+      const group = groups.get(score) ?? lists.map(() => [] as ScoredApp[]);
+      group[sourceIndex].push(entry);
+      groups.set(score, group);
+    }
+  }
+  const result: StoreApp[] = [];
+  for (const score of [...groups.keys()].sort((a, b) => b - a)) {
+    const group = groups.get(score)!;
+    const longest = Math.max(0, ...group.map((entries) => entries.length));
+    for (let index = 0; index < longest; index++) for (const entries of group) if (entries[index]) result.push(entries[index].app);
+  }
+  return result;
+}
+
+function appAdded(app: StoreApp): number {
+  if (typeof app.added === "number") return app.added;
+  if (typeof app.added === "string") return /^\d+$/.test(app.added) ? Number(app.added) : Date.parse(app.added) / 1000;
+  return 0;
+}
+
+function mergeNew(lists: StoreApp[][]): StoreApp[] {
+  return lists.flatMap((apps, sourceIndex) => apps.map((app, index) => ({ app, sourceIndex, index, added: appAdded(app) })))
+    .sort((left, right) => {
+      if (left.added && right.added && left.added !== right.added) return right.added - left.added;
+      if (left.added && !right.added) return -1;
+      if (!left.added && right.added) return 1;
+      return left.index - right.index || left.sourceIndex - right.sourceIndex;
+    }).map((entry) => entry.app);
 }
 
 function SourceBadge({ app }: { app: StoreApp }) {
   if (app.sourceUnavailable) return <Text style={{ typography: "bodySmall" }}>source unavailable</Text>;
   return <Text style={{ typography: "labelSmall" }}>{app.sourceLabel ?? app.source}</Text>;
-}
-
-function SourceRow({ plugin, onToggle }: { plugin: SourcePlugin; onToggle: (plugin: SourcePlugin) => void }) {
-  return <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 12 }} modifiers={[paddingAll(12)]}>
-    <Column modifiers={[weight(1)]}>
-      <Text style={{ typography: "titleMedium" }}>{plugin.label}</Text>
-      <Text style={{ typography: "bodySmall" }}>{plugin.package}</Text>
-      <Text style={{ typography: "bodySmall" }}>{plugin.enabled ? "Enabled" : "Disabled"}</Text>
-    </Column>
-    <Button onClick={() => onToggle(plugin)}><Text>{plugin.enabled ? "Disable" : "Enable"}</Text></Button>
-  </Row>;
 }
 
 function ProgressLine({ progress }: { progress: string }) {
@@ -83,25 +103,16 @@ function progressLabel(phase: string, percent: number | null, bytesDone: number,
   return `${phase || "Working…"}${fraction}${size}`;
 }
 
-function Screenshots({ app }: { app: StoreApp }) {
-  if (app.screenshots.length === 0) return null;
-  return (
-    <>
-      <Text style={{ typography: "titleMedium" }}>Screenshots</Text>
-      <RNHostView modifiers={[height(349)]}><FlatList removeClippedSubviews={false} horizontal style={{ height: 349 }} data={app.screenshots} keyExtractor={(_, index) => `${app.id}-${index}`}
-        renderItem={({ item: src }) => <Host style={{ width: 620, height: 349 }} colorScheme="dark" seedColor="#79c75b"><ComposeImage source={{ uri: src }} contentDescription={`${app.name} screenshot`} modifiers={[width(620), height(349)]} /></Host>} /></RNHostView>
-    </>
-  );
-}
-
-function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, onCancel, onOpenDetails, onInstall, onUninstall, onLaunch }: {
+function AppTile({ app, installed, updateAvailable, versionText, busy, busyLabel, progress, percent, error, canCancel, onCancel, onOpenDetails, onInstall, onUninstall, onLaunch }: {
   app: StoreApp;
   installed: boolean;
   updateAvailable: boolean;
+  versionText?: string;
   busy: boolean;
   busyLabel: string;
   progress: string;
   percent: number | null;
+  error?: string;
   canCancel: boolean;
   onCancel: () => void;
   onOpenDetails: (app: StoreApp) => void;
@@ -120,6 +131,7 @@ function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, p
         <Column modifiers={[weight(1), padding(12, 0, 12, 0)]}>
           <Text style={{ typography: "titleMedium" }}>{app.name}</Text>
           <SourceBadge app={app} />
+          {versionText ? <Text style={{ typography: "bodySmall" }}>{versionText}</Text> : null}
           {app.rating ? <Text style={{ typography: "bodySmall" }}>{app.rating.average.toFixed(1)} / 5 · {app.rating.count} ratings</Text> : null}
           <Text style={{ typography: "bodyMedium" }} maxLines={2}>{app.summary}</Text>
         </Column>
@@ -130,44 +142,8 @@ function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, p
         <ProgressLine progress={progress} />
         <Show when={canCancel}><Button onClick={onCancel}><Text>Cancel</Text></Button></Show>
       </Show>
+      {error ? <Text style={{ typography: "bodySmall" }} color="#b3261e" modifiers={[padding(12, 0, 12, 12)]}>{error}</Text> : null}
     </Column>
-  );
-}
-
-function DetailContent({ app, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, onCancel, onBack, onInstall, onUninstall }: {
-  app: StoreApp; installed: boolean; updateAvailable: boolean; busy: boolean; busyLabel: string; progress: string; percent: number | null; canCancel: boolean; onCancel: () => void; onBack: () => void; onInstall: () => void; onUninstall: () => void;
-}) {
-  const permissionText = app.permissions.length ? app.permissions.join(" · ") : "Permission details are not included for this app's source.";
-  const actionLabel = busy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? "Uninstall" : "Install";
-  const action = updateAvailable ? onInstall : installed ? onUninstall : onInstall;
-  return (
-    <LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 14 }}>
-      <Button onClick={onBack}><Text>‹  Back to apps</Text></Button>
-      <Row verticalAlignment="center">
-        <AppIcon app={app} imageSize={84} />
-        <Column modifiers={[padding(18, 0, 18, 0)]}>
-          <Text style={{ typography: "headlineSmall" }}>{app.name}</Text>
-          <SourceBadge app={app} />
-          {app.rating ? <Text style={{ typography: "bodySmall" }}>{app.rating.average.toFixed(1)} / 5 · {app.rating.count} ratings</Text> : null}
-          <Text style={{ typography: "bodyLarge" }}>{app.summary}</Text>
-          <Text style={{ typography: "bodySmall" }}>{app.developer}</Text>
-        </Column>
-      </Row>
-      <Row horizontalArrangement={{ spacedBy: 10 }} verticalAlignment="center">
-        <Button enabled={!busy} onClick={action}><Text>{actionLabel}</Text></Button>
-        <Column modifiers={[weight(1)]}>
-          <Show when={Boolean(progress)}><LinearProgressIndicator progress={percentToRatio(percent)} /></Show>
-          <ProgressLine progress={progress} />
-        </Column>
-        <Show when={busy && canCancel}><Button onClick={onCancel}><Text>Cancel</Text></Button></Show>
-      </Row>
-      <Screenshots app={app} />
-      <Text style={{ typography: "titleMedium" }}>Permissions</Text>
-      <Text style={{ typography: "bodyMedium" }}>{permissionText}</Text>
-      <Text style={{ typography: "titleMedium" }}>About this app</Text>
-      <Text style={{ typography: "bodyMedium" }}>{app.description.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || app.summary}</Text>
-      <Text style={{ typography: "bodySmall" }}>{app.id}</Text>
-    </LazyColumn>
   );
 }
 
@@ -175,28 +151,40 @@ export default function App() {
   const sources = useSources();
   const [plugins, setPlugins] = useState<SourcePlugin[]>([]);
   const [repoSource, setRepoSource] = useState("");
-  const repositorySources = sources.filter((source) => source.capabilities?.includes("HAS_REPOSITORIES"));
-  const themeColors = useMaterialColors({ colorScheme: "dark", seedColor: "#79c75b" });
-  const [page, setPage] = useState<Page>("browse");
-  const [feed, setFeed] = useState<Feed>("popular");
+  const [repoRevision, setRepoRevision] = useState(0);
+  const themeColors = useMaterialColors();
+  const [page, setPage] = useState<StorePage>("browse");
   const [repoManager, setRepoManager] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const searchNative = useNativeState("");
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [repoUrl, setRepoUrl] = useState("");
+  const [repoName, setRepoName] = useState("");
   const [repoFingerprint, setRepoFingerprint] = useState("");
   const repoUrlInput = useNativeState("");
+  const repoNameInput = useNativeState("");
   const repoFingerprintInput = useNativeState("");
   const [repoHost, setRepoHost] = useState("");
   const [repoError, setRepoError] = useState("");
   const [repoChecking, setRepoChecking] = useState(false);
+  const [addingRepository, setAddingRepository] = useState(false);
   const [apps, setApps] = useState<StoreApp[]>([]);
+  const [popularApps, setPopularApps] = useState<StoreApp[]>([]);
+  const [newApps, setNewApps] = useState<StoreApp[]>([]);
+  const [collectionLoading, setCollectionLoading] = useState({ popular: true, new: true });
+  const [collectionErrors, setCollectionErrors] = useState({ popular: "", new: "" });
   const [installedApps, setInstalledApps] = useState<StoreApp[]>([]);
   const [updateApps, setUpdateApps] = useState<StoreApp[]>([]);
   const [installedError, setInstalledError] = useState("");
   const [selected, setSelected] = useState<StoreApp | null>(null);
+  const [detailError, setDetailError] = useState("");
+  const [relatedApps, setRelatedApps] = useState<StoreApp[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [searchErrors, setSearchErrors] = useState<Array<{ source: string; message: string }>>([]);
   const [operations, setOperations] = useState<Record<string, Operation>>({});
+  const [operationErrors, setOperationErrors] = useState<Record<string, string>>({});
+  const [sourceIcons, setSourceIcons] = useState<Record<string, string>>({});
   const requestId = useRef(0);
   const initialInstalledRefresh = useRef(false);
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
@@ -208,14 +196,22 @@ export default function App() {
 
   async function refreshRepositories(pkg = repoSource) {
     if (!pkg) { setRepositories([]); return; }
-    try { setRepositories(JSON.parse(await MatonOS.sourceReposAll(pkg)) as Repository[]); } catch (error) { console.error("Repository operation failed", error); setRepoError(errorText(error)); }
+    try {
+      const [rows, info] = await Promise.all([MatonOS.sourceReposAll(pkg), MatonOS.sourceInfo(pkg)]);
+      setRepositories(JSON.parse(rows) as Repository[]);
+      setRepoRevision(sourceInfo(pkg, info).revision);
+    } catch (error) { console.error("Repository operation failed", error); setRepoError(errorText(error)); }
   }
 
   const reviewRepository = useCallback(async (url: string, fingerprint: string) => {
     setRepoError(""); setRepoUrl(url); setRepoFingerprint(fingerprint); repoUrlInput.set(url); repoFingerprintInput.set(fingerprint);
-    try { setRepoHost(new URL(url).hostname); }
+    try {
+      const host = new URL(url).hostname;
+      setRepoHost(host);
+      if (!repoName.trim()) { setRepoName(host); repoNameInput.set(host); }
+    }
     catch (error) { setRepoHost(""); setRepoError(errorText(error)); }
-  }, [repoUrlInput, repoFingerprintInput, setRepoError, setRepoUrl, setRepoFingerprint, setRepoHost]);
+  }, [repoUrlInput, repoNameInput, repoFingerprintInput, repoName, setRepoError, setRepoUrl, setRepoFingerprint, setRepoHost]);
 
   const handleRepositoryLink = useCallback(async (value: string) => {
     try {
@@ -237,10 +233,10 @@ export default function App() {
     try {
       const share = new URL(repoUrl);
       if (repoFingerprint) share.searchParams.set("fingerprint", repoFingerprint);
-      await MatonOS.sourceAddRepo(repoSource, share.toString());
+      await MatonOS.sourceAddRepoNamed(repoSource, repoName.trim() || repoHost, share.toString());
       await refreshRepositories();
       setRepoError("Repository verified and added.");
-      setRepoUrl(""); setRepoFingerprint(""); setRepoHost(""); repoUrlInput.set(""); repoFingerprintInput.set("");
+      setRepoUrl(""); setRepoName(""); setRepoFingerprint(""); setRepoHost(""); repoUrlInput.set(""); repoNameInput.set(""); repoFingerprintInput.set("");
     } catch (error) { console.error("Adding repository failed", error); setRepoError(errorText(error)); await refreshRepositories(); }
     finally { setRepoChecking(false); }
   }
@@ -248,6 +244,12 @@ export default function App() {
   async function removeRepository(repository: string) {
     try { await MatonOS.sourceDelRepo(repoSource, repository); await refreshRepositories(); await runSearch(""); }
     catch (error) { setRepoError(errorText(error)); }
+  }
+
+  async function toggleRepository(repository: Repository, enabled: boolean) {
+    if (repoRevision < 5) { console.error(`${repoSource}: repository enable switch unavailable at contract revision ${repoRevision}`); return; }
+    try { await MatonOS.sourceSetRepoEnabled(repoSource, repository.id, enabled); await refreshRepositories(); await runSearch(""); }
+    catch (error) { console.error(`Changing repository state failed id=${repository.id}`, error); setRepoError(errorText(error)); }
   }
 
   async function refreshInstalled() {
@@ -272,44 +274,76 @@ export default function App() {
     } catch (error) { console.error("Listing updates failed", error); setUpdateApps([]); setMessage(errorText(error)); }
   }
 
-  async function loadCollection(nextFeed: Feed) {
+  async function loadCollections() {
     const request = ++requestId.current;
-    setMessage(""); setSearchErrors([]); setLoading(true);
-    const cacheKey = nextFeed;
-    let cacheDisplayed = false;
-    const cacheRead = MatonOS.getBrowseCache(cacheKey).then((cached) => {
-      if (!cached || request !== requestId.current || results.some(Boolean)) return;
-      const rows = JSON.parse(cached) as StoreApp[];
-      cacheDisplayed = true;
-      setApps(rows);
-      setLoading(false);
-    }).catch((error) => console.warn(`Reading ${nextFeed} browse cache failed`, error));
-    const results: StoreApp[][] = [];
-    const publish = () => {
+    setMessage(""); setSearchErrors([]);
+    setCollectionErrors({ popular: "", new: "" });
+    setCollectionLoading({ popular: true, new: true });
+    const popularResults: ScoredApp[][] = sources.map(() => []);
+    const newResults: StoreApp[][] = sources.map(() => []);
+    let popularReceived = false;
+    let newReceived = false;
+    const publishPopular = () => {
       if (request !== requestId.current) return;
-      const rows = interleave(results).slice(0, 250);
-      setApps(rows); setLoading(false);
-      void MatonOS.setBrowseCache(cacheKey, JSON.stringify(rows)).catch((error) => console.warn(`Writing ${nextFeed} browse cache failed`, error));
+      popularReceived = true;
+      const rows = mergePopular(popularResults).slice(0, 250);
+      setPopularApps(rows); setCollectionLoading((state) => ({ ...state, popular: false }));
+      void MatonOS.setBrowseCache("popular", JSON.stringify(rows)).catch((error) => console.warn("Writing Popular browse cache failed", error));
     };
-    const tasks = sources.map((source, index) => sourceCollection(source, nextFeed).then((rows) => {
-      results[index] = rows;
-      publish();
-    }).catch((error) => {
-      console.error(`${source.name}: ${nextFeed} collection failed`, error);
-      if (request === requestId.current) setSearchErrors((current) => [...current, { source: source.label ?? source.name, message: errorText(error) }]);
-    }));
-    await Promise.allSettled([cacheRead, ...tasks]);
-    if (request === requestId.current && !results.some(Boolean)) {
-      if (!cacheDisplayed) setApps([]);
-      setLoading(false);
+    const publishNew = () => {
+      if (request !== requestId.current) return;
+      newReceived = true;
+      const rows = mergeNew(newResults).slice(0, 250);
+      setNewApps(rows); setCollectionLoading((state) => ({ ...state, new: false }));
+      void MatonOS.setBrowseCache("new", JSON.stringify(rows)).catch((error) => console.warn("Writing New browse cache failed", error));
+    };
+    const caches = ["popular", "new"].map(async (key) => {
+      try {
+        const cached = await MatonOS.getBrowseCache(key);
+        if (!cached || request !== requestId.current) return;
+        const rows = JSON.parse(cached) as StoreApp[];
+        if (key === "popular" && !popularReceived) setPopularApps(rows);
+        if (key === "new" && !newReceived) setNewApps(rows);
+      } catch (error) { console.warn(`Reading ${key} browse cache failed`, error); }
+    });
+    const tasks = sources.flatMap((source, index) => [
+      (async () => {
+        try {
+          if (!source.getPopularApps) {
+            console.error(`${source.name}: scored Popular call is unavailable; skipping this source`);
+            return;
+          }
+          popularResults[index] = await source.getPopularApps(50);
+          publishPopular();
+        } catch (error) {
+          console.error(`${source.name}: Popular feed failed`, error);
+          setCollectionErrors((state) => ({ ...state, popular: state.popular || errorText(error) }));
+        }
+      })(),
+      (async () => {
+        try {
+          newResults[index] = await source.collection("new", 0, 50);
+          publishNew();
+        } catch (error) {
+          console.error(`${source.name}: New feed failed`, error);
+          setCollectionErrors((state) => ({ ...state, new: state.new || errorText(error) }));
+        }
+      })(),
+    ]);
+    await Promise.allSettled([...caches, ...tasks]);
+    if (request === requestId.current) {
+      if (!popularReceived) { setPopularApps([]); setCollectionLoading((state) => ({ ...state, popular: false })); }
+      if (!newReceived) { setNewApps([]); setCollectionLoading((state) => ({ ...state, new: false })); }
     }
   }
 
   async function runSearch(value: string) {
+    setSearchText(value);
+    searchNative.set(value);
     const request = ++requestId.current;
     setSearchErrors([]);
     if (!value.trim()) {
-      await loadCollection(feed);
+      await loadCollections();
       return;
     }
     setLoading(true); setMessage("");
@@ -332,30 +366,39 @@ export default function App() {
   }
 
   async function openDetails(app: StoreApp) {
-    setSelected(app); setMessage("");
-    try { setSelected(await sources.find((source) => source.name === app.source)!.details(app)); }
-    catch (error) { setMessage(errorText(error)); }
+    setSelected(app); setMessage(""); setDetailError(""); setRelatedApps([app]);
+    const candidates = await Promise.allSettled(sources.map((source) => source.search(app.id)));
+    const matches = candidates.flatMap((result) => result.status === "fulfilled" ? result.value.filter((candidate) => candidate.id === app.id) : []);
+    const unique = [...new Map([app, ...matches].map((candidate) => [`${candidate.source}:${candidate.id}`, candidate])).values()];
+    setRelatedApps(unique);
+    try {
+      const source = sources.find((candidate) => candidate.name === app.source);
+      if (!source) throw new Error("This app's source is no longer enabled.");
+      setSelected(await source.details(app));
+    } catch (error) { setDetailError(errorText(error)); }
   }
 
   async function startInstall(app: StoreApp | null = selected) {
     if (!app || operations[app.ref]) return;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const kind = installedIds.has(`${app.source}:${app.id}`) ? "update" : "install";
+    setOperationErrors((current) => { const next = { ...current }; delete next[app.ref]; return next; });
     updateOperation(app.ref, { app, id: operationId, kind, progress: "Preparing installation…", percent: null }); setMessage("");
     try {
       await sources.find((source) => source.name === app.source)!.install(app, operationId);
       setOperations((current) => current[app.ref]?.id === operationId ? { ...current, [app.ref]: { ...current[app.ref], progress: "Downloading and installing…" } } : current);
-    } catch (error) { updateOperation(app.ref, null); setMessage(errorText(error)); }
+    } catch (error) { updateOperation(app.ref, null); setOperationErrors((current) => ({ ...current, [app.ref]: errorText(error) })); }
   }
 
   async function startUninstall(app: StoreApp | null = selected) {
     if (!app || operations[app.ref]) return;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setOperationErrors((current) => { const next = { ...current }; delete next[app.ref]; return next; });
     updateOperation(app.ref, { app, id: operationId, kind: "uninstall", progress: "Preparing removal…", percent: null }); setMessage("");
     try {
       await sources.find((source) => source.name === app.source)!.uninstall(app, operationId);
       setOperations((current) => current[app.ref]?.id === operationId ? { ...current, [app.ref]: { ...current[app.ref], progress: "Removing app…" } } : current);
-    } catch (error) { updateOperation(app.ref, null); setMessage(errorText(error)); }
+    } catch (error) { updateOperation(app.ref, null); setOperationErrors((current) => ({ ...current, [app.ref]: errorText(error) })); }
   }
 
   async function cancelOperation(ref: string) {
@@ -365,7 +408,7 @@ export default function App() {
       const source = sources.find((candidate) => candidate.name === operation.app.source);
       if (source?.cancel) {
         try { await source.cancel(operation.id); }
-        catch (error) { setMessage(errorText(error)); }
+        catch (error) { setOperationErrors((current) => ({ ...current, [ref]: errorText(error) })); }
       }
     }
   }
@@ -382,10 +425,10 @@ export default function App() {
       initialInstalledRefresh.current = true;
       void refreshInstalled();
     }
-    const timer = setTimeout(() => { void loadCollection(feed); }, 0);
+    const timer = setTimeout(() => { void loadCollections(); }, 0);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- collection loader is keyed by source registry and feed
-  }, [sources, feed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- collection loader is keyed by source registry
+  }, [sources]);
   useEffect(() => {
     const handleProgress = (payload: SourceProgress) => {
       if (payload.phase === "complete") {
@@ -393,8 +436,8 @@ export default function App() {
         if (!ref) return;
         const completed = payload.result;
         updateOperation(ref, null);
-        if (!completed?.ok) setMessage(completed?.error || completed?.output?.trim() || "The operation did not complete.");
-        else setMessage("Operation complete.");
+        if (!completed?.ok) setOperationErrors((current) => ({ ...current, [ref]: completed?.error || completed?.output?.trim() || "The operation did not complete." }));
+        else setOperationErrors((current) => { const next = { ...current }; delete next[ref]; return next; });
         void refreshInstalled();
         void refreshUpdates();
         return;
@@ -436,7 +479,7 @@ export default function App() {
           console.error(`Store source ${operation.app.source} lost operation ${operation.id}`);
           try { await MatonOS.sourceCancel(operation.app.source, operation.id); }
           catch (error) { console.error(`Abandoning lost source operation ${operation.id} failed`, error); }
-          if (active) { updateOperation(operation.app.ref, null); setMessage(`${operation.app.source} lost the operation`); }
+          if (active) { updateOperation(operation.app.ref, null); setOperationErrors((current) => ({ ...current, [operation.app.ref]: `${operation.app.source} lost the operation` })); }
         }).catch((error) => {
           // A dead binder also emits a terminal result from the native manager.
           console.error(`Checking source operation ${operation.id} failed`, error);
@@ -457,26 +500,38 @@ export default function App() {
     catch (error) { console.error("Toggling plugin failed", error); setMessage(errorText(error)); }
   }
   async function openRepositorySource(pkg: string) { setRepoSource(pkg); setRepoManager(true); setSelected(null); setRepoError(""); await refreshRepositories(pkg); }
-  const repositoryButtons = repositorySources.map((source) => <Button key={source.name} onClick={() => void openRepositorySource(source.name)}><Text>{source.label ?? source.name} repositories</Text></Button>);
-  const repositoryRows = repositories.map((repository) => <Column key={repository.id} modifiers={[paddingAll(10)]}>
-    <Text style={{ typography: "titleMedium" }}>{repository.label}</Text>
-    <Text style={{ typography: "bodySmall" }}>{repository.url}</Text>
-    <Text style={{ typography: "bodySmall" }}>{repository.broken ? "Broken: index verification or download failed." : "Trusted repository"}</Text>
-    <Show when={!repository.official}><Button onClick={() => void removeRepository(repository.id)}><Text>Remove repository</Text></Button></Show>
-  </Column>);
-  const sourceRows = plugins.map((plugin) => <SourceRow key={plugin.package} plugin={plugin} onToggle={(item) => void togglePlugin(item)} />);
-  const searchErrorRows = searchErrors.map((error) => <Host key={error.source} matchContents={{ vertical: true }} colorScheme="dark"><Text style={{ typography: "bodySmall" }} modifiers={[paddingAll(12)]}>{error.source} results failed: {error.message}</Text></Host>);
-
-  async function selectFeed(next: Feed) {
-    setFeed(next);
+  async function reviewRepositoryFromDialog() {
+    await reviewRepository(repoUrl, repoFingerprint);
+    setAddingRepository(false);
   }
+  const repositoryRows = repositories.map((repository) => <Column key={repository.id} modifiers={[paddingAll(10)]}>
+    <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }}>
+      <Column modifiers={[weight(1)]}>
+        <Text style={{ typography: "titleMedium" }}>{repository.label}</Text>
+        <Text style={{ typography: "bodySmall" }}>{repository.url}</Text>
+        <Text style={{ typography: "bodySmall" }}>{repository.broken ? "Broken: index verification or download failed." : "Trusted repository"}</Text>
+        <Text style={{ typography: "bodySmall" }}>{repository.appCount != null && repository.appCount >= 0 ? `${repository.appCount} apps` : "App count not available yet"}</Text>
+        <Text style={{ typography: "bodySmall" }}>{repository.lastRefreshed ? `Last refreshed ${new Date(repository.lastRefreshed * 1000).toLocaleString()}` : "Not refreshed yet"}</Text>
+      </Column>
+      {repoRevision >= 5 ? <Switch value={repository.enabled ?? true} onCheckedChange={(enabled) => void toggleRepository(repository, enabled)} /> : <Text style={{ typography: "labelSmall" }}>Enabled</Text>}
+      {!repository.official ? <Button onClick={() => void removeRepository(repository.id)}><Text>Remove</Text></Button> : null}
+    </Row>
+  </Column>);
+  const sourceRows = plugins.map((plugin) => <StoreSourceRow key={plugin.package} plugin={plugin} icon={sourceIcons[plugin.package]} onSettings={() => void openRepositorySource(plugin.package)} onToggle={(enabled) => void togglePlugin({ ...plugin, enabled })} />);
+  const searchErrorRows = searchErrors.map((error) => <Host key={error.source} matchContents={{ vertical: true }}><Text style={{ typography: "bodySmall" }} modifiers={[paddingAll(12)]}>{error.source} results failed: {error.message}</Text></Host>);
 
-  async function selectPage(next: Page) {
+  async function selectPage(next: StorePage) {
     setPage(next); setSelected(null); setMessage("");
+    setRepoManager(false);
     if (next === "installed") await refreshInstalled();
     if (next === "updates") await refreshUpdates();
     if (next === "sources") {
-      try { setPlugins(await MatonOS.sourcePlugins()); }
+      try {
+        const available = await MatonOS.sourcePlugins();
+        setPlugins(available);
+        const icons = await Promise.all(available.map(async (plugin) => [plugin.package, await MatonOS.sourceIcon(plugin.package)] as const));
+        setSourceIcons(Object.fromEntries(icons.filter((entry): entry is [string, string] => Boolean(entry[1]))));
+      }
       catch (error) { setMessage(errorText(error)); }
     }
   }
@@ -484,16 +539,17 @@ export default function App() {
   async function launchApp(app: StoreApp) {
     setMessage("");
     try {
-      await runApp(app.id.split("/")[1] ?? app.id);
-      setMessage(`Opening ${app.name}…`);
-    } catch (error) { setMessage(errorText(error)); }
+      if (app.sourceLabel === "Flatpak") await runApp(app.id.split("/")[1] ?? app.id);
+      else await MatonOS.launchAndroidApp(app.packageName ?? app.id);
+    } catch (error) { setOperationErrors((current) => ({ ...current, [app.ref]: errorText(error) })); }
   }
 
   const renderApp = ({ item }: { item: StoreApp }) => (
-    <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }} colorScheme="dark" seedColor="#79c75b">
+      <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }}>
       <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(operations[item.ref])}
+        versionText={updateIds.has(`${item.source}:${item.id}`) ? `${installedApps.find((entry) => entry.source === item.source && entry.id === item.id)?.versionName ?? "Installed"} → ${item.versionName ?? "Available"}` : item.versionName}
         busyLabel={operations[item.ref] ? busyButtonLabel(operations[item.ref].kind) : ""}
-        progress={operations[item.ref]?.progress ?? ""} percent={operations[item.ref]?.percent ?? null}
+        progress={operations[item.ref]?.progress ?? ""} percent={operations[item.ref]?.percent ?? null} error={operationErrors[item.ref]}
         canCancel={Boolean(sources.find((source) => source.name === item.source)?.cancel)} onCancel={() => void cancelOperation(item.ref)}
         onOpenDetails={openDetails}
         onInstall={(app) => void startInstall(app)} onUninstall={(app) => void startUninstall(app)} onLaunch={(app) => void launchApp(app)} />
@@ -503,14 +559,22 @@ export default function App() {
 
   let content: ReactNode;
   if (repoManager) {
-    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
-      <Button onClick={() => { setRepoManager(false); setRepoError(""); }}><Text>‹  Back to apps</Text></Button>
+    content = <Host style={{ flex: 1 }}><LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
+      <Button onClick={() => { setRepoManager(false); setRepoError(""); }}><Text>‹  Back to sources</Text></Button>
       <Text style={{ typography: "headlineSmall" }}>Repositories</Text>
       <Text style={{ typography: "bodyMedium" }}>The Software Center verifies each repository's signed index using the fingerprint you confirm.</Text>
       {repositoryRows}
-      <OutlinedTextField value={repoUrlInput} onValueChange={(value) => { setRepoUrl(value); repoUrlInput.set(value); }}><OutlinedTextField.Label>HTTPS repository URL</OutlinedTextField.Label></OutlinedTextField>
-      <OutlinedTextField value={repoFingerprintInput} onValueChange={(value) => { setRepoFingerprint(value); repoFingerprintInput.set(value); }}><OutlinedTextField.Label>Signing fingerprint (SHA-256)</OutlinedTextField.Label></OutlinedTextField>
-      <Button onClick={() => void reviewRepository(repoUrl, repoFingerprint)}><Text>Review repository</Text></Button>
+      <Button onClick={() => { setAddingRepository(true); setRepoError(""); }}><Text>Add repository</Text></Button>
+      {addingRepository ? <AlertDialog onDismissRequest={() => setAddingRepository(false)}>
+        <AlertDialog.Title>Add repository</AlertDialog.Title>
+        <AlertDialog.Text><Column verticalArrangement={{ spacedBy: 10 }}>
+          <OutlinedTextField value={repoNameInput} onValueChange={(value) => { setRepoName(value); repoNameInput.set(value); }}><OutlinedTextField.Label>Repository name</OutlinedTextField.Label></OutlinedTextField>
+          <OutlinedTextField value={repoUrlInput} onValueChange={(value) => { setRepoUrl(value); repoUrlInput.set(value); }}><OutlinedTextField.Label>HTTPS repository URL</OutlinedTextField.Label></OutlinedTextField>
+          {repoSource.includes("fdroid") ? <OutlinedTextField value={repoFingerprintInput} onValueChange={(value) => { setRepoFingerprint(value); repoFingerprintInput.set(value); }}><OutlinedTextField.Label>Signing fingerprint (SHA-256)</OutlinedTextField.Label></OutlinedTextField> : null}
+        </Column></AlertDialog.Text>
+        <AlertDialog.DismissButton><Button onClick={() => setAddingRepository(false)}><Text>Cancel</Text></Button></AlertDialog.DismissButton>
+        <AlertDialog.ConfirmButton><Button onClick={() => void reviewRepositoryFromDialog()}><Text>Review</Text></Button></AlertDialog.ConfirmButton>
+      </AlertDialog> : null}
       {repoHost ? <Column modifiers={[paddingAll(12)]}>
         <Text style={{ typography: "titleMedium" }}>Trust repository at {repoHost}?</Text>
         <Text style={{ typography: "bodySmall" }}>Fingerprint: {repoFingerprint.replace(/(.{2})/g, "$1:").replace(/:$/, "").toUpperCase()}</Text>
@@ -520,64 +584,53 @@ export default function App() {
       <Show when={Boolean(repoError)}><Text style={{ typography: "bodyMedium" }}>{repoError}</Text></Show>
     </LazyColumn></Host>;
   } else if (selected) {
-    const currentDetail = selected;
-    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(`${currentDetail.source}:${currentDetail.id}`)} updateAvailable={updateIds.has(`${currentDetail.source}:${currentDetail.id}`)} busy={Boolean(operations[currentDetail.ref])}
-      busyLabel={operations[currentDetail.ref] ? busyButtonLabel(operations[currentDetail.ref].kind) : ""} progress={operations[currentDetail.ref]?.progress ?? ""} percent={operations[currentDetail.ref]?.percent ?? null}
-      canCancel={Boolean(sources.find((source) => source.name === currentDetail.source)?.cancel)} onCancel={() => void cancelOperation(currentDetail.ref)}
-      onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} /></Host>;
+    const detailChoices = relatedApps.filter((app) => app.id === selected.id);
+    const currentOperation = operations[selected.ref];
+    content = <DetailScreen app={selected} sources={detailChoices} installed={installedIds.has(`${selected.source}:${selected.id}`)} updateAvailable={updateIds.has(`${selected.source}:${selected.id}`)} busy={Boolean(currentOperation)}
+      busyLabel={currentOperation ? busyButtonLabel(currentOperation.kind) : ""} progress={currentOperation?.progress ?? ""} percent={currentOperation?.percent ?? null}
+      canCancel={Boolean(sources.find((source) => source.name === selected.source)?.cancel)} error={operationErrors[selected.ref] ?? detailError}
+      onCancel={() => void cancelOperation(selected.ref)} onBack={() => setSelected(null)} onInstall={() => void startInstall(selected)} onRemove={() => void startUninstall(selected)} onOpen={() => void launchApp(selected)} onChooseSource={openDetails} />;
   } else if (page === "sources") {
-    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
+    content = <Host style={{ flex: 1 }}><LazyColumn contentPadding={{ start: 20, top: 18, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
       <Text style={{ typography: "headlineSmall" }}>Sources</Text>
-      <Text style={{ typography: "bodyMedium" }}>Choose which app catalogs the Software Center searches.</Text>
+      <Text style={{ typography: "bodyMedium" }}>Choose which app catalogs Software Center searches.</Text>
       {sourceRows}
-      <Text style={{ typography: "titleLarge" }}>Repositories</Text>
-      <Text style={{ typography: "bodyMedium" }}>Manage repositories provided by enabled sources.</Text>
-      {repositoryButtons}
     </LazyColumn></Host>;
   } else if (page === "installed" || page === "updates") {
     const entries = page === "installed" ? installedApps : updateApps;
-    const heading = page === "installed" ? "Installed apps" : "Updates";
+    const heading = page === "installed" ? "Installed" : "Updates";
     content = <View style={{ flex: 1 }}>
-      <Host matchContents={{ vertical: true }} colorScheme="dark" seedColor="#79c75b"><Column>
-      <Text style={{ typography: "headlineSmall" }} modifiers={[paddingAll(20)]}>{heading}</Text>
-      <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading {page === "installed" ? "installed apps" : "updates"}…</Text></Show>
+      <Host matchContents={{ vertical: true }}><Row verticalAlignment="center" modifiers={[paddingAll(16)]}>
+        <Text style={{ typography: "headlineSmall" }} modifiers={[weight(1)]}>{heading}</Text>
+        {page === "updates" && updateApps.length > 0 ? <Button onClick={() => void Promise.all(updateApps.map((app) => startInstall(app)))}><Text>Update all</Text></Button> : null}
+      </Row></Host>
+      <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading {page}…</Text></Show>
       <Show when={Boolean(installedError) && !loading}><Text modifiers={[paddingAll(20)]}>{installedError}</Text></Show>
-      </Column></Host>
       <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={entries} renderItem={renderApp} keyExtractor={keyApp}
-        ListEmptyComponent={!loading && !installedError ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(20)]}>{page === "installed" ? "No installed apps are listed yet." : "No updates are available."}</Text></Host> : null} />
+        ListEmptyComponent={!loading && !installedError ? <Host style={{ width: "100%", height: 64 }}><Text modifiers={[paddingAll(20)]}>{page === "installed" ? "No installed apps are listed yet." : "No updates are available."}</Text></Host> : null} />
     </View>;
-  } else {
+  } else if (searchText.trim()) {
     content = <View style={{ flex: 1 }}>
-      <Host matchContents={{ vertical: true }} colorScheme="dark" seedColor="#79c75b"><Column>
-      <Text style={{ typography: "headlineSmall" }} modifiers={[padding(20, 18, 20, 0)]}>Explore apps</Text>
-      <Row horizontalArrangement={{ spacedBy: 10 }} modifiers={[padding(16, 10, 16, 10)]}>
-        <Button onClick={() => void selectFeed("popular")}><Text>Popular</Text></Button>
-        <Button onClick={() => void selectFeed("new")}><Text>New</Text></Button>
-      </Row>
-      <OutlinedTextField singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 0, 16, 0)]}>
-        <OutlinedTextField.Label>Search apps</OutlinedTextField.Label>
-      </OutlinedTextField>
-      </Column></Host>
+      {loading ? <Text modifiers={[paddingAll(16)]}>Searching…</Text> : null}
       <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={apps} renderItem={renderApp} keyExtractor={keyApp}
-        ListHeaderComponent={loading ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(16)]}>Loading apps…</Text></Host> : null}
-        ListEmptyComponent={!loading && !searchErrors.length ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text></Host> : null} />
+        ListEmptyComponent={!loading && !searchErrors.length ? <Host style={{ width: "100%", height: 64 }}><Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text></Host> : null} />
       {searchErrorRows}
     </View>;
+  } else {
+    content = <ScrollView style={{ flex: 1 }}>
+      <AppGridSection title="Popular" apps={popularApps} installed={installedIds} onOpen={openDetails} loading={collectionLoading.popular} error={collectionErrors.popular} />
+      <AppGridSection title="New" apps={newApps} installed={installedIds} onOpen={openDetails} loading={collectionLoading.new} error={collectionErrors.new} />
+    </ScrollView>;
   }
 
-  return (
-    <View style={{ flex: 1, backgroundColor: themeColors.background }}>
-      <Host matchContents={{ vertical: true }} colorScheme="dark" seedColor="#79c75b"><Column>
-        <Row horizontalArrangement={{ spacedBy: 12 }} modifiers={[paddingAll(14)]}>
-          <Text style={{ typography: "titleLarge" }} modifiers={[weight(1)]}>Software Center</Text>
-          <Button onClick={() => void selectPage("browse")}><Text>Browse</Text></Button>
-          <Button onClick={() => void selectPage("installed")}><Text>Installed</Text></Button>
-          <Button onClick={() => void selectPage("updates")}><Text>Updates</Text></Button>
-          <Button onClick={() => void selectPage("sources")}><Text>Sources</Text></Button>
-        </Row>
-        <Host style={{ height: 48 }} matchContents={{ vertical: true }} colorScheme="dark"><Show when={Boolean(message)}><Text style={{ typography: "bodyMedium" }} maxLines={1} modifiers={[padding(18, 0, 18, 8)]}>{message}</Text></Show></Host>
-      </Column></Host>
+  return <View style={{ flex: 1, flexDirection: "row", backgroundColor: themeColors.background }}>
+    <StoreNavRail page={repoManager ? "sources" : selected ? page : page} updateCount={updateApps.length} onSelect={(next) => void selectPage(next)} />
+    <View style={{ flex: 1 }}>
+      <Host matchContents={{ vertical: true }}><OutlinedTextField value={searchNative} singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 12, 16, 12)]}>
+        <OutlinedTextField.Label>Search apps</OutlinedTextField.Label>
+      </OutlinedTextField></Host>
+      {repoManager ? <Text style={{ typography: "titleMedium" }} modifiers={[padding(16, 0, 16, 0)]}>{plugins.find((plugin) => plugin.package === repoSource)?.label ?? "Source settings"}</Text> : null}
       {content}
     </View>
-  );
+  </View>;
 }

@@ -1,0 +1,100 @@
+import { useEffect, useMemo, useState } from "react";
+import { Button, Column, Row, Text } from "@expo/ui/jetpack-compose";
+import { paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
+import { MatonOS } from "../../modules/matonos-software/src/MatonOS";
+import type { StoreApp } from "../sources/Source";
+import { formatFlatpakPermissions, type PermissionRow } from "../sources/FlatpakPermissions";
+import { MaterialSymbol } from "./MaterialSymbol";
+
+type AndroidPermission = { name: string; label: string | null; group: string | null; groupLabel: string | null; dangerous: boolean };
+
+function permissionIcon(label: string, group: string | null): string {
+  const value = `${label} ${group ?? ""}`.toLowerCase();
+  if (value.includes("camera")) return "photo_camera";
+  if (value.includes("microphone")) return "mic";
+  if (value.includes("location")) return "location_on";
+  if (value.includes("contact")) return "contacts";
+  if (value.includes("calendar")) return "calendar_month";
+  if (value.includes("sms") || value.includes("phone")) return "call";
+  if (value.includes("notification")) return "notifications";
+  if (value.includes("nearby") || value.includes("bluetooth") || value.includes("wifi")) return "devices";
+  if (value.includes("storage") || value.includes("media")) return "folder";
+  return "security";
+}
+
+function GrantRow({ row }: { row: PermissionRow }) {
+  return <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 12 }} modifiers={[paddingAll(10)]}>
+    <MaterialSymbol name={row.icon} />
+    <Column modifiers={[weight(1)]}>
+      <Text style={{ typography: "bodyLarge" }}>{row.title}</Text>
+      {row.detail ? <Text style={{ typography: "bodySmall" }}>{row.detail}</Text> : null}
+    </Column>
+    {row.broad ? <Text style={{ typography: "labelSmall" }}>Broad access</Text> : null}
+  </Row>;
+}
+
+function FlatpakPermissionRows({ values }: { values: string[] }) {
+  const rows = useMemo(() => formatFlatpakPermissions(values), [values]);
+  const items = rows.map((row, index) => <GrantRow key={`${index}:${row.title}`} row={row} />);
+  if (!rows.length) return <Text style={{ typography: "bodyMedium" }}>No permissions are listed.</Text>;
+  return <Column>{items}</Column>;
+}
+
+export function AndroidPermissionRows({ values }: { values: string[] }) {
+  const [descriptions, setDescriptions] = useState<AndroidPermission[]>([]);
+  const [otherExpanded, setOtherExpanded] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void MatonOS.describeAndroidPermissions(values).then((json) => {
+      if (active) setDescriptions(JSON.parse(json) as AndroidPermission[]);
+    }).catch((error: unknown) => {
+      console.error("Describing Android app permissions failed", error);
+      if (active) setDescriptions(values.map((name) => ({ name, label: null, group: null, groupLabel: null, dangerous: false })));
+    });
+    return () => { active = false; };
+  }, [values]);
+
+  const defined = descriptions.filter((permission) => permission.label);
+  const other = descriptions.filter((permission) => !permission.label);
+  const groups = new Map<string, AndroidPermission[]>();
+  for (const permission of defined) {
+    const label = permission.groupLabel || permission.group || "Other permissions";
+    const current = groups.get(label) ?? [];
+    current.push(permission);
+    groups.set(label, current);
+  }
+  const sortedGroups = [...groups.entries()].sort((a, b) => {
+    const aDangerous = a[1].some((permission) => permission.dangerous);
+    const bDangerous = b[1].some((permission) => permission.dangerous);
+    return Number(bDangerous) - Number(aDangerous) || a[0].localeCompare(b[0]);
+  });
+  const groupRows = sortedGroups.map(([group, permissions]) => {
+    const permissionRows = [...permissions].sort((a, b) => Number(b.dangerous) - Number(a.dangerous) || (a.label ?? a.name).localeCompare(b.label ?? b.name))
+      .map((permission) => <GrantRow key={permission.name} row={{
+        icon: permissionIcon(permission.label ?? permission.name, permission.group),
+        title: permission.label ?? permission.name,
+        detail: permission.dangerous ? "Runtime permission" : undefined,
+      }} />);
+    return <Column key={group}>
+      <Text style={{ typography: "titleSmall" }} modifiers={[paddingAll(8)]}>{group}</Text>
+      {permissionRows}
+    </Column>;
+  });
+  const otherRows = otherExpanded ? other.map((permission) => <GrantRow key={permission.name} row={{ icon: "info", title: permission.name }} />) : null;
+
+  return <Column>
+    {groupRows}
+    {other.length ? <Column>
+      <Button onClick={() => setOtherExpanded((expanded) => !expanded)}>
+        <Text>{`Other (${other.length}) app-defined permissions ${otherExpanded ? "⌃" : "⌄"}`}</Text>
+      </Button>
+      {otherRows}
+    </Column> : null}
+    {!descriptions.length ? <Text style={{ typography: "bodyMedium" }}>No permissions are listed.</Text> : null}
+  </Column>;
+}
+
+export function PermissionList({ app }: { app: StoreApp }) {
+  const isFlatpak = app.sourceLabel === "Flatpak";
+  return isFlatpak ? <FlatpakPermissionRows values={app.permissions} /> : <AndroidPermissionRows values={app.permissions} />;
+}
