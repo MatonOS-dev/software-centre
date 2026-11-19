@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { AppState, FlatList, ScrollView, View } from "react-native";
-import { AlertDialog, Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Switch, Text, useNativeState } from "@expo/ui/jetpack-compose";
+import { Button, Host, OutlinedTextField, Row, Text, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
-import { clickable, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
+import { padding, paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
 import type { ScoredApp, StoreApp } from "./sources/Source";
+import { interleave, mergeNew, mergePopular } from "./sources/Collections";
 import { MatonOS } from "../modules/matonos-software/src/MatonOS";
 import { useSources, setPluginEnabled } from "./hooks/useStore";
 import type { SourcePlugin } from "../modules/matonos-software/src/MatonOS";
@@ -12,142 +13,55 @@ import { sourceInfo } from "./sources/PluginSource";
 import { StorePage, StoreNavRail } from "./components/StoreNavRail";
 import { StoreSourceRow } from "./components/StoreSourceRow";
 import { AppGridSection } from "./components/AppGridSection";
-import { MaterialSymbol } from "./components/MaterialSymbol";
+import { AppTile, busyButtonLabel, progressLabel } from "./components/AppTile";
 import { DetailScreen } from "./screens/DetailScreen";
+import { RepositoryManagerScreen, type Repository, type RepoField } from "./screens/RepositoryManagerScreen";
+import { SourcesScreen } from "./screens/SourcesScreen";
+import { Show } from "./components/Show";
 
-type Repository = { id: string; url: string; label: string; official: boolean; broken: boolean; enabled?: boolean; appCount?: number; lastRefreshed?: number; builtIn?: boolean; removable?: boolean; description?: string };
 type Operation = { app: StoreApp; id: string; kind: "install" | "update" | "uninstall"; progress: string; percent: number | null; error?: string };
-function RepoAddField({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (id: string, value: string) => void }) {
-  const native = useNativeState(value);
-  useEffect(() => { native.set(value); }, [native, value]);
-  return <OutlinedTextField value={native} onValueChange={(next) => { native.set(next); onChange(id, next); }}><OutlinedTextField.Label>{label}</OutlinedTextField.Label></OutlinedTextField>;
-}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
-function Show({ when, children }: { when: boolean; children: ReactNode }) {
-  if (!when) return null;
-  return <>{children}</>;
+function updateAllButton(page: StorePage, apps: StoreApp[], onUpdate: (app: StoreApp) => void): ReactNode {
+  if (page !== "updates" || apps.length === 0) return null;
+  const updateAll = () => { void Promise.all(apps.map(onUpdate)); };
+  return <Button onClick={updateAll}><Text>Update all</Text></Button>;
 }
 
-function AppIcon({ app, imageSize }: { app: StoreApp; imageSize: number }) {
-  if (!app.icon) return null;
-  return <ComposeImage source={{ uri: app.icon }} contentDescription={`${app.name} icon`} modifiers={[size(imageSize, imageSize)]} />;
+function installedEmptyState(page: StorePage, loading: boolean, error: string): ReactElement | null {
+  if (loading || error) return null;
+  const label = page === "installed" ? "No installed apps are listed yet." : "No updates are available.";
+  return <Host style={{ width: "100%", height: 64 }}><Text modifiers={[paddingAll(20)]}>{label}</Text></Host>;
 }
 
-/** Round-robin merge so each source's best matches appear near the top. */
-function interleave(lists: StoreApp[][]): StoreApp[] {
-  const merged: StoreApp[] = [];
-  const longest = Math.max(0, ...lists.map((list) => list.length));
-  for (let index = 0; index < longest; index++) {
-    for (const list of lists) if (index < list.length) merged.push(list[index]);
-  }
-  return merged;
+function searchEmptyState(loading: boolean, errors: Array<{ source: string; message: string }>, message: string): ReactElement | null {
+  if (loading || errors.length > 0) return null;
+  return <Host style={{ width: "100%", height: 64 }}><Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text></Host>;
 }
 
-function mergePopular(lists: ScoredApp[][]): StoreApp[] {
-  const groups = new Map<number, ScoredApp[][]>();
-  for (let sourceIndex = 0; sourceIndex < lists.length; sourceIndex++) {
-    for (const entry of lists[sourceIndex]) {
-      const score = Math.round(entry.score * 10) / 10;
-      const group = groups.get(score) ?? lists.map(() => [] as ScoredApp[]);
-      group[sourceIndex].push(entry);
-      groups.set(score, group);
-    }
-  }
-  const result: StoreApp[] = [];
-  for (const score of [...groups.keys()].sort((a, b) => b - a)) {
-    const group = groups.get(score)!;
-    const longest = Math.max(0, ...group.map((entries) => entries.length));
-    for (let index = 0; index < longest; index++) for (const entries of group) if (entries[index]) result.push(entries[index].app);
-  }
-  return result;
+function navigationPage(repositoryManager: boolean, page: StorePage): StorePage {
+  if (repositoryManager) return "sources";
+  return page;
 }
 
-function appAdded(app: StoreApp): number {
-  if (typeof app.added === "number") return app.added;
-  if (typeof app.added === "string") return /^\d+$/.test(app.added) ? Number(app.added) : Date.parse(app.added) / 1000;
-  return 0;
-}
-
-function mergeNew(lists: StoreApp[][]): StoreApp[] {
-  return lists.flatMap((apps, sourceIndex) => apps.map((app, index) => ({ app, sourceIndex, index, added: appAdded(app) })))
-    .sort((left, right) => {
-      if (left.added && right.added && left.added !== right.added) return right.added - left.added;
-      if (left.added && !right.added) return -1;
-      if (!left.added && right.added) return 1;
-      return left.index - right.index || left.sourceIndex - right.sourceIndex;
-    }).map((entry) => entry.app);
-}
-
-function SourceBadge({ app }: { app: StoreApp }) {
-  if (app.sourceUnavailable) return <Text style={{ typography: "bodySmall" }}>source unavailable</Text>;
-  return <Text style={{ typography: "labelSmall" }}>{app.sourceLabel ?? app.source}</Text>;
-}
-
-function ProgressLine({ progress }: { progress: string }) {
-  if (!progress) return null;
-  return <Text style={{ typography: "bodyMedium" }} maxLines={2}>{progress}</Text>;
-}
-
-function busyButtonLabel(kind: "install" | "update" | "uninstall"): string {
-  if (kind === "update") return "Updating…";
-  return kind === "install" ? "Installing…" : "Working…";
-}
-
-function percentToRatio(percent: number | null): number | null {
-  if (percent == null) return null;
-  return Math.min(1, Math.max(0, percent / 100));
-}
-
-function progressLabel(phase: string, percent: number | null, bytesDone: number, bytesTotal: number): string {
-  const fraction = percent == null ? "" : ` ${percent}%`;
-  const size = bytesTotal > 0 ? ` · ${Math.floor(Math.max(0, bytesDone) / 1048576)} / ${Math.ceil(bytesTotal / 1048576)} MB` : "";
-  return `${phase || "Working…"}${fraction}${size}`;
-}
-
-function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, percent, error, onOpenDetails, onInstall, onLaunch }: {
-  app: StoreApp;
-  installed: boolean;
-  updateAvailable: boolean;
-  busy: boolean;
-  busyLabel: string;
-  progress: string;
-  percent: number | null;
-  error?: string;
-  onOpenDetails: (app: StoreApp) => void;
-  onInstall: (app: StoreApp) => void;
-  onLaunch: (app: StoreApp) => void;
+function AppTileRow({ item, installedIds, updateIds, operations, operationErrors, onOpenDetails, onInstall, onLaunch }: {
+  item: StoreApp; installedIds: Set<string>; updateIds: Set<string>; operations: Record<string, Operation>; operationErrors: Record<string, string>;
+  onOpenDetails: (app: StoreApp) => void; onInstall: (app?: StoreApp | null) => Promise<void>; onLaunch: (app: StoreApp) => Promise<void>;
 }) {
-  const isBusy = busy;
-  const buttonLabel = app.sourceUnavailable ? "Unavailable" : isBusy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? "Open" : "Install";
-  const buttonAction = updateAvailable ? () => onInstall(app) : installed ? () => onLaunch(app) : () => onInstall(app);
-  const badgeIcons = app.badges?.map((badge) => <MaterialSymbol key={badge.id} name={badge.icon || "verified"} description={badge.label} />);
-  return (
-    <Column modifiers={app.sourceUnavailable ? [] : [clickable(() => onOpenDetails(app))]}>
-      <Row verticalAlignment="center" modifiers={[paddingAll(12)]}>
-        <AppIcon app={app} imageSize={48} />
-        <Column modifiers={[weight(1), padding(12, 0, 12, 0)]}>
-          <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 4 }}>
-            <Text style={{ typography: "titleMedium" }} maxLines={1}>{app.name}</Text>
-            {badgeIcons}
-          </Row>
-          <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 8 }}>
-            <SourceBadge app={app} />
-            {app.rating ? <Text style={{ typography: "bodySmall" }}>{`★ ${app.rating.average.toFixed(1)} (${app.rating.count})`}</Text> : null}
-          </Row>
-          <Text style={{ typography: "bodySmall" }} maxLines={1}>{app.summary}</Text>
-        </Column>
-        <Column modifiers={[width(112)]} verticalArrangement={{ spacedBy: 4 }}>
-          {isBusy ? <LinearProgressIndicator progress={percentToRatio(percent)} /> : <Button enabled={!busy && !app.sourceUnavailable} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>}
-          {isBusy ? <ProgressLine progress={progress} /> : null}
-          {error ? <Text style={{ typography: "bodySmall" }} color="#b3261e">{error}</Text> : null}
-        </Column>
-      </Row>
-    </Column>
-  );
+  const operation = operations[item.ref];
+  const busyLabel = operation ? busyButtonLabel(operation.kind) : "";
+  const install = (app: StoreApp) => {
+    const option = app.repoOptions?.find((entry) => entry.installable);
+    void onInstall(option ? { ...app, repo: option.repoId } : app);
+  };
+  return <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }}>
+    <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(operation)}
+      busyLabel={busyLabel} progress={operation?.progress ?? ""} percent={operation?.percent ?? null} error={operationErrors[item.ref]}
+      onOpenDetails={onOpenDetails} onInstall={install} onLaunch={onLaunch} />
+  </Host>;
 }
 
 export default function App() {
@@ -155,7 +69,7 @@ export default function App() {
   const [plugins, setPlugins] = useState<SourcePlugin[]>([]);
   const [repoSource, setRepoSource] = useState("");
   const [repoRevision, setRepoRevision] = useState(0);
-  const [repoAddFields, setRepoAddFields] = useState<Array<{ id: string; label: string }>>([]);
+  const [repoAddFields, setRepoAddFields] = useState<RepoField[]>([]);
   const [repoFieldValues, setRepoFieldValues] = useState<Record<string, string>>({});
   const themeColors = useMaterialColors();
   const [page, setPage] = useState<StorePage>("browse");
@@ -497,20 +411,6 @@ export default function App() {
     await reviewRepository(repoUrl);
     setAddingRepository(false);
   }
-  const repositoryRows = repositories.map((repository) => <Column key={repository.id} modifiers={[paddingAll(10)]}>
-    <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }}>
-      <Column modifiers={[weight(1)]}>
-        <Text style={{ typography: "titleMedium" }}>{repository.label}</Text>
-        {repository.description ? <Text style={{ typography: "bodySmall" }}>{repository.description}</Text> : null}
-        <Text style={{ typography: "bodySmall" }}>{repository.url}</Text>
-        <Text style={{ typography: "bodySmall" }}>{repository.broken ? "Broken: index verification or download failed." : "Trusted repository"}</Text>
-        <Text style={{ typography: "bodySmall" }}>{repository.appCount != null && repository.appCount >= 0 ? `${repository.appCount} apps` : "App count not available yet"}</Text>
-        <Text style={{ typography: "bodySmall" }}>{repository.lastRefreshed ? `Last refreshed ${new Date(repository.lastRefreshed * 1000).toLocaleString()}` : "Not refreshed yet"}</Text>
-      </Column>
-      {repoRevision >= 5 ? <Switch value={repository.enabled ?? true} onCheckedChange={(enabled) => void toggleRepository(repository, enabled)} /> : <Text style={{ typography: "labelSmall" }}>Enabled</Text>}
-      {repository.removable !== false ? <Button onClick={() => void removeRepository(repository.id)}><Text>Remove</Text></Button> : null}
-    </Row>
-  </Column>);
   const sourceRows = plugins.map((plugin) => <StoreSourceRow key={plugin.package} plugin={plugin} icon={sourceIcons[plugin.package]} onSettings={() => void openRepositorySource(plugin.package)} onToggle={(enabled) => void togglePlugin({ ...plugin, enabled })} />);
   const searchErrorRows = searchErrors.map((error) => <Host key={error.source} matchContents={{ vertical: true }}><Text style={{ typography: "bodySmall" }} modifiers={[paddingAll(12)]}>{error.source} results failed: {error.message}</Text></Host>);
 
@@ -542,73 +442,45 @@ export default function App() {
   }
 
   const renderApp = ({ item }: { item: StoreApp }) => (
-      <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }}>
-      <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(operations[item.ref])}
-        busyLabel={operations[item.ref] ? busyButtonLabel(operations[item.ref].kind) : ""}
-        progress={operations[item.ref]?.progress ?? ""} percent={operations[item.ref]?.percent ?? null} error={operationErrors[item.ref]}
-        onOpenDetails={openDetails}
-        onInstall={(app) => { const option = app.repoOptions?.find((entry) => entry.installable); void startInstall(option ? { ...app, repo: option.repoId } : app); }} onLaunch={(app) => void launchApp(app)} />
-    </Host>
+      <AppTileRow item={item} installedIds={installedIds} updateIds={updateIds} operations={operations} operationErrors={operationErrors} onOpenDetails={openDetails} onInstall={startInstall} onLaunch={launchApp} />
   );
   const renderAppRow = (app: StoreApp) => renderApp({ item: app });
   const keyApp = (app: StoreApp) => `${app.source}:${app.id}`;
 
   let content: ReactNode;
   if (repoManager) {
-    content = <Host style={{ flex: 1 }}><LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
-      <Button onClick={() => { setRepoManager(false); setRepoError(""); }}><Text>‹  Back to sources</Text></Button>
-      <Text style={{ typography: "headlineSmall" }}>Repositories</Text>
-      <Text style={{ typography: "bodyMedium" }}>Review repository details before adding a source repository.</Text>
-      {repositoryRows}
-      <Button onClick={() => { setAddingRepository(true); setRepoError(""); }}><Text>Add repository</Text></Button>
-      {addingRepository ? <AlertDialog onDismissRequest={() => setAddingRepository(false)}>
-        <AlertDialog.Title>Add repository</AlertDialog.Title>
-        <AlertDialog.Text><Column verticalArrangement={{ spacedBy: 10 }}>
-          <OutlinedTextField value={repoNameInput} onValueChange={(value) => { setRepoName(value); repoNameInput.set(value); }}><OutlinedTextField.Label>Repository name</OutlinedTextField.Label></OutlinedTextField>
-          <OutlinedTextField value={repoUrlInput} onValueChange={(value) => { setRepoUrl(value); repoUrlInput.set(value); }}><OutlinedTextField.Label>HTTPS repository URL</OutlinedTextField.Label></OutlinedTextField>
-          {repoAddFields.map((field) => <RepoAddField key={field.id} id={field.id} label={field.label} value={repoFieldValues[field.id] ?? ""} onChange={(id, value) => setRepoFieldValues((current) => ({ ...current, [id]: value }))} />)}
-        </Column></AlertDialog.Text>
-        <AlertDialog.DismissButton><Button onClick={() => setAddingRepository(false)}><Text>Cancel</Text></Button></AlertDialog.DismissButton>
-        <AlertDialog.ConfirmButton><Button onClick={() => void reviewRepositoryFromDialog()}><Text>Review</Text></Button></AlertDialog.ConfirmButton>
-      </AlertDialog> : null}
-      {repoHost ? <Column modifiers={[paddingAll(12)]}>
-        <Text style={{ typography: "titleMedium" }}>Trust repository at {repoHost}?</Text>
-        {repoAddFields.map((field) => <Text key={field.id} style={{ typography: "bodySmall" }}>{field.label}: {repoFieldValues[field.id] ?? ""}</Text>)}
-        <Text style={{ typography: "bodySmall" }}>Review the repository details before adding it.</Text>
-        <Button enabled={!repoChecking} onClick={() => void saveRepository()}><Text>{repoChecking ? "Checking…" : "Trust and add"}</Text></Button>
-      </Column> : null}
-      <Show when={Boolean(repoError)}><Text style={{ typography: "bodyMedium" }}>{repoError}</Text></Show>
-    </LazyColumn></Host>;
+    content = <RepositoryManagerScreen repositories={repositories} revision={repoRevision} fields={repoAddFields} fieldValues={repoFieldValues} error={repoError} host={repoHost} checking={repoChecking} adding={addingRepository} repoNameInput={repoNameInput} repoUrlInput={repoUrlInput}
+      onBack={() => { setRepoManager(false); setRepoError(""); }} onAdd={() => { setAddingRepository(true); setRepoError(""); }} onDismissAdd={() => setAddingRepository(false)} onReviewAdd={() => void reviewRepositoryFromDialog()}
+      onSetField={(id, value) => setRepoFieldValues((current) => ({ ...current, [id]: value }))}
+      onSetName={(value) => { setRepoName(value); repoNameInput.set(value); }} onSetUrl={(value) => { setRepoUrl(value); repoUrlInput.set(value); }}
+      onToggle={(repository, enabled) => void toggleRepository(repository, enabled)} onRemove={(id) => void removeRepository(id)} onSave={() => void saveRepository()} />;
   } else if (selected) {
     const currentOperation = operations[selected.ref];
+    const currentBusyLabel = currentOperation ? busyButtonLabel(currentOperation.kind) : "";
     content = <DetailScreen app={selected} installed={installedIds.has(`${selected.source}:${selected.id}`)} updateAvailable={updateIds.has(`${selected.source}:${selected.id}`)} busy={Boolean(currentOperation)}
-      busyLabel={currentOperation ? busyButtonLabel(currentOperation.kind) : ""} progress={currentOperation?.progress ?? ""} percent={currentOperation?.percent ?? null}
+      busyLabel={currentBusyLabel} progress={currentOperation?.progress ?? ""} percent={currentOperation?.percent ?? null}
       canCancel={Boolean(sources.find((source) => source.name === selected.source)?.cancel)} error={operationErrors[selected.ref] ?? detailError}
       onCancel={() => void cancelOperation(selected.ref)} onBack={() => setSelected(null)} onInstall={() => void startInstall(selected)} onRemove={() => void startUninstall(selected)} onOpen={() => void launchApp(selected)} onChooseRepository={(repoId) => void chooseRepository(repoId)} />;
   } else if (page === "sources") {
-    content = <Host style={{ flex: 1 }}><LazyColumn contentPadding={{ start: 20, top: 18, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
-      <Text style={{ typography: "headlineSmall" }}>Sources</Text>
-      <Text style={{ typography: "bodyMedium" }}>Choose which app catalogs Software Center searches.</Text>
-      {sourceRows}
-    </LazyColumn></Host>;
+    content = <SourcesScreen rows={sourceRows} />;
   } else if (page === "installed" || page === "updates") {
     const entries = page === "installed" ? installedApps : updateApps;
     const heading = page === "installed" ? "Installed" : "Updates";
     content = <View style={{ flex: 1 }}>
       <Host matchContents={{ vertical: true }}><Row verticalAlignment="center" modifiers={[paddingAll(16)]}>
         <Text style={{ typography: "headlineSmall" }} modifiers={[weight(1)]}>{heading}</Text>
-        {page === "updates" && updateApps.length > 0 ? <Button onClick={() => void Promise.all(updateApps.map((app) => startInstall(app)))}><Text>Update all</Text></Button> : null}
+        {updateAllButton(page, updateApps, startInstall)}
       </Row></Host>
       <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading {page}…</Text></Show>
       <Show when={Boolean(installedError) && !loading}><Text modifiers={[paddingAll(20)]}>{installedError}</Text></Show>
       <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={entries} renderItem={renderApp} keyExtractor={keyApp}
-        ListEmptyComponent={!loading && !installedError ? <Host style={{ width: "100%", height: 64 }}><Text modifiers={[paddingAll(20)]}>{page === "installed" ? "No installed apps are listed yet." : "No updates are available."}</Text></Host> : null} />
+        ListEmptyComponent={installedEmptyState(page, loading, installedError)} />
     </View>;
   } else if (searchText.trim()) {
     content = <View style={{ flex: 1 }}>
-      {loading ? <Text modifiers={[paddingAll(16)]}>Searching…</Text> : null}
+      <Show when={loading}><Text modifiers={[paddingAll(16)]}>Searching…</Text></Show>
       <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={apps} renderItem={renderApp} keyExtractor={keyApp}
-        ListEmptyComponent={!loading && !searchErrors.length ? <Host style={{ width: "100%", height: 64 }}><Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text></Host> : null} />
+        ListEmptyComponent={searchEmptyState(loading, searchErrors, message)} />
       {searchErrorRows}
     </View>;
   } else {
@@ -619,12 +491,12 @@ export default function App() {
   }
 
   return <View style={{ flex: 1, flexDirection: "row", backgroundColor: themeColors.background }}>
-    <StoreNavRail page={repoManager ? "sources" : selected ? page : page} updateCount={updateApps.length} onSelect={(next) => void selectPage(next)} />
+    <StoreNavRail page={navigationPage(repoManager, page)} updateCount={updateApps.length} onSelect={(next) => void selectPage(next)} />
     <View style={{ flex: 1 }}>
       <Host matchContents={{ vertical: true }}><OutlinedTextField value={searchNative} singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 12, 16, 12)]}>
         <OutlinedTextField.Label>Search apps</OutlinedTextField.Label>
       </OutlinedTextField></Host>
-      {repoManager ? <Text style={{ typography: "titleMedium" }} modifiers={[padding(16, 0, 16, 0)]}>{plugins.find((plugin) => plugin.package === repoSource)?.label ?? "Source settings"}</Text> : null}
+      <Show when={repoManager}><Text style={{ typography: "titleMedium" }} modifiers={[padding(16, 0, 16, 0)]}>{plugins.find((plugin) => plugin.package === repoSource)?.label ?? "Source settings"}</Text></Show>
       {content}
     </View>
   </View>;

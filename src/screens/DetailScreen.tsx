@@ -7,6 +7,7 @@ import { height, padding, size, weight, width } from "@expo/ui/jetpack-compose/m
 import type { StoreApp } from "../sources/Source";
 import { MaterialSymbol } from "../components/MaterialSymbol";
 import { PermissionList } from "../components/PermissionList";
+import { Show } from "../components/Show";
 
 type Tab = "details" | "permissions";
 
@@ -21,6 +22,82 @@ function screenshotItem(app: StoreApp, src: string, index: number) {
   return <Host key={`${app.id}-${index}`} style={{ width: 620, height: 349 }}>
     <ComposeImage source={{ uri: src }} contentDescription={`${app.name} screenshot`} modifiers={[width(620), height(349)]} />
   </Host>;
+}
+
+function repositoryOptionLabel(option: NonNullable<StoreApp["repoOptions"]>[number], selectedRepo: string | undefined): string {
+  let label = `${option.name}${option.version ? ` · ${option.version}` : ""}`;
+  if (option.repoId === selectedRepo) label += " ✓";
+  if (!option.installable && option.note) label += ` — ${option.note}`;
+  return label;
+}
+
+function DetailAppIcon({ app }: { app: StoreApp }) {
+  if (app.icon) return <ComposeImage source={{ uri: app.icon }} contentDescription={`${app.name} icon`} modifiers={[size(96, 96)]} />;
+  return <MaterialSymbol name="apps" size={72} />;
+}
+
+function RemoveButton({ installed, busy, onRemove }: { installed: boolean; busy: boolean; onRemove: () => void }) {
+  if (!installed) return null;
+  return <Button enabled={!busy} onClick={onRemove}><Text>Remove</Text></Button>;
+}
+
+function RepositoryMenu({ options, selectedRepository, expanded, setExpanded, onChoose }: {
+  options: NonNullable<StoreApp["repoOptions"]>; selectedRepository: NonNullable<StoreApp["repoOptions"]>[number] | undefined;
+  expanded: boolean; setExpanded: (value: boolean) => void; onChoose: (repoId: string) => void;
+}) {
+  if (options.length <= 1) return null;
+  const items = options.map((option) => <DropdownMenuItem key={option.repoId} onClick={() => { setExpanded(false); onChoose(option.repoId); }}>
+    <DropdownMenuItem.Text>{repositoryOptionLabel(option, selectedRepository?.repoId)}</DropdownMenuItem.Text>
+  </DropdownMenuItem>);
+  return <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
+    <DropdownMenu.Trigger><Button onClick={() => setExpanded(true)}><Text>{`${selectedRepository?.name ?? "Choose repository"} ▾`}</Text></Button></DropdownMenu.Trigger>
+    <DropdownMenu.Items>{items}</DropdownMenu.Items>
+  </DropdownMenu>;
+}
+
+function selectedRepositoryNote(note: string | undefined) {
+  if (!note) return null;
+  return <Text style={{ typography: "bodySmall" }}>{note}</Text>;
+}
+
+function progressPanel(progress: string, percent: number | null, busy: boolean, canCancel: boolean, onCancel: () => void) {
+  if (!progress) return null;
+  const ratio = percent === null ? null : Math.min(1, Math.max(0, percent / 100));
+  return <Column verticalArrangement={{ spacedBy: 6 }}>
+    <LinearProgressIndicator progress={ratio} />
+    <Text style={{ typography: "bodySmall" }}>{progress}</Text>
+    <Show when={busy && canCancel}><Button onClick={onCancel}><Text>Cancel</Text></Button></Show>
+  </Column>;
+}
+
+function tabHeader(tab: Tab, app: StoreApp) {
+  if (tab === "permissions") return <PermissionList app={app} />;
+  return <Text style={{ typography: "titleMedium" }}>About this app</Text>;
+}
+
+function tabDetails(tab: Tab, markdown: string, colors: ReturnType<typeof useMaterialColors>, openLink: (event: { url: string }) => void) {
+  if (tab !== "details") return null;
+  return <EnrichedMarkdownText markdown={markdown} flavor="commonmark" selectable onLinkPress={openLink}
+    markdownStyle={{ paragraph: { fontSize: 14, color: colors.onSurface, lineHeight: 21, marginBottom: 12 },
+      h1: { color: colors.onSurface }, h2: { color: colors.onSurface }, h3: { color: colors.onSurface },
+      list: { color: colors.onSurface, itemSpacing: 5 }, link: { color: colors.primary } }} />;
+}
+
+function tabFacts(tab: Tab, app: StoreApp) {
+  if (tab !== "details") return null;
+  return <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><DetailFacts app={app} /></Host>;
+}
+
+function actionButtonLabel(busy: boolean, busyLabel: string, updateAvailable: boolean, installed: boolean): string {
+  if (busy) return busyLabel;
+  if (updateAvailable) return "Update";
+  if (installed) return "Open";
+  return "Install";
+}
+
+function actionHandler(updateAvailable: boolean, installed: boolean, onInstall: () => void, onOpen: () => void): () => void {
+  if (updateAvailable || !installed) return onInstall;
+  return onOpen;
 }
 
 function ScreenshotStrip({ app }: { app: StoreApp }) {
@@ -56,14 +133,12 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
   const colors = useMaterialColors();
   const [tab, setTab] = useState<Tab>("details");
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
-  const actionLabel = busy ? busyLabel : updateAvailable ? "Update" : installed ? "Open" : "Install";
-  const action = updateAvailable ? onInstall : installed ? onOpen : onInstall;
+  const actionLabel = actionButtonLabel(busy, busyLabel, updateAvailable, installed);
+  const action = actionHandler(updateAvailable, installed, onInstall, onOpen);
   const actionNeedsRepository = updateAvailable || !installed;
   const repoOptions = app.repoOptions ?? [];
   const selectedRepository = repoOptions.find((option) => option.repoId === app.repo);
-  const repositoryItems = repoOptions.map((option) => <DropdownMenuItem key={option.repoId} onClick={() => { setSourceMenuOpen(false); onChooseRepository(option.repoId); }}>
-    <DropdownMenuItem.Text>{`${option.name}${option.version ? ` · ${option.version}` : ""}${option.repoId === app.repo ? " ✓" : ""}${!option.installable && option.note ? ` — ${option.note}` : ""}`}</DropdownMenuItem.Text>
-  </DropdownMenuItem>);
+  const actionEnabled = !busy && (!actionNeedsRepository || (selectedRepository?.installable ?? true));
   const markdown = app.descriptionMarkdown ?? app.description ?? app.summary;
   const openLink = (event: { url: string }) => {
     try { const url = new URL(event.url); if (url.protocol === "http:" || url.protocol === "https:") void Linking.openURL(url.toString()); }
@@ -73,7 +148,7 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><Column verticalArrangement={{ spacedBy: 14 }}>
     <Button onClick={onBack}><Text>‹  Back</Text></Button>
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 18 }}>
-      {app.icon ? <ComposeImage source={{ uri: app.icon }} contentDescription={`${app.name} icon`} modifiers={[size(96, 96)]} /> : <MaterialSymbol name="apps" size={72} />}
+      <DetailAppIcon app={app} />
       <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: 4 }}>
         <Text style={{ typography: "headlineMedium" }}>{app.name}</Text>
         <Text style={{ typography: "bodyMedium" }}>{app.summary}</Text>
@@ -82,31 +157,21 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
       </Column>
     </Row>
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }}>
-      <Button enabled={!busy && (!actionNeedsRepository || (selectedRepository?.installable ?? true))} onClick={action}><Text>{actionLabel}</Text></Button>
-      {installed ? <Button enabled={!busy} onClick={onRemove}><Text>Remove</Text></Button> : null}
-      {repoOptions.length > 1 ? <DropdownMenu expanded={sourceMenuOpen} onDismissRequest={() => setSourceMenuOpen(false)}>
-        <DropdownMenu.Trigger><Button onClick={() => setSourceMenuOpen(true)}><Text>{`${selectedRepository?.name ?? "Choose repository"} ▾`}</Text></Button></DropdownMenu.Trigger>
-        <DropdownMenu.Items>{repositoryItems}</DropdownMenu.Items>
-      </DropdownMenu> : null}
+      <Button enabled={actionEnabled} onClick={action}><Text>{actionLabel}</Text></Button>
+      <RemoveButton installed={installed} busy={busy} onRemove={onRemove} />
+      <RepositoryMenu options={repoOptions} selectedRepository={selectedRepository} expanded={sourceMenuOpen} setExpanded={setSourceMenuOpen} onChoose={onChooseRepository} />
     </Row>
-    {selectedRepository?.note ? <Text style={{ typography: "bodySmall" }}>{selectedRepository.note}</Text> : null}
-    {progress ? <Column verticalArrangement={{ spacedBy: 6 }}>
-      <LinearProgressIndicator progress={percent === null ? null : Math.min(1, Math.max(0, percent / 100))} />
-      <Text style={{ typography: "bodySmall" }}>{progress}</Text>
-      {busy && canCancel ? <Button onClick={onCancel}><Text>Cancel</Text></Button> : null}
-    </Column> : null}
-    {error ? <Text style={{ typography: "bodyMedium" }} color="#b3261e">{error}</Text> : null}
+    {selectedRepositoryNote(selectedRepository?.note)}
+    {progressPanel(progress, percent, busy, canCancel, onCancel)}
+    <Show when={Boolean(error)}><Text style={{ typography: "bodyMedium" }} color="#b3261e">{error}</Text></Show>
     <ScreenshotStrip app={app} />
     <Row horizontalArrangement={{ spacedBy: 8 }}>
       <Button onClick={() => setTab("details")}><Text>Details</Text></Button>
       <Button onClick={() => setTab("permissions")}><Text>Permissions</Text></Button>
     </Row>
-    {tab === "permissions" ? <PermissionList app={app} /> : <Text style={{ typography: "titleMedium" }}>About this app</Text>}
+    {tabHeader(tab, app)}
     </Column></Host>
-    {tab === "details" ? <EnrichedMarkdownText markdown={markdown} flavor="commonmark" selectable onLinkPress={openLink}
-      markdownStyle={{ paragraph: { fontSize: 14, color: colors.onSurface, lineHeight: 21, marginBottom: 12 },
-        h1: { color: colors.onSurface }, h2: { color: colors.onSurface }, h3: { color: colors.onSurface },
-        list: { color: colors.onSurface, itemSpacing: 5 }, link: { color: colors.primary } }} /> : null}
-    {tab === "details" ? <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><DetailFacts app={app} /></Host> : null}
+    {tabDetails(tab, markdown, colors, openLink)}
+    {tabFacts(tab, app)}
   </ScrollView>;
 }

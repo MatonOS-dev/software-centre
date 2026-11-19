@@ -5,6 +5,7 @@ import { MatonOS } from "../../modules/matonos-software/src/MatonOS";
 import type { StoreApp } from "../sources/Source";
 type PermissionRow = { icon: string; title: string; detail?: string; broad?: boolean };
 import { MaterialSymbol } from "./MaterialSymbol";
+import { Show } from "./Show";
 
 type AndroidPermission = { name: string; label: string | null; group: string | null; groupLabel: string | null; dangerous: boolean };
 
@@ -27,10 +28,20 @@ function GrantRow({ row }: { row: PermissionRow }) {
     <MaterialSymbol name={row.icon} />
     <Column modifiers={[weight(1)]}>
       <Text style={{ typography: "bodyLarge" }}>{row.title}</Text>
-      {row.detail ? <Text style={{ typography: "bodySmall" }}>{row.detail}</Text> : null}
+      <Show when={Boolean(row.detail)}><Text style={{ typography: "bodySmall" }}>{row.detail}</Text></Show>
     </Column>
-    {row.broad ? <Text style={{ typography: "labelSmall" }}>Broad access</Text> : null}
+    <Show when={Boolean(row.broad)}><Text style={{ typography: "labelSmall" }}>Broad access</Text></Show>
   </Row>;
+}
+
+function permissionDetail(permission: AndroidPermission): string | undefined {
+  if (permission.dangerous) return "Runtime permission";
+  return undefined;
+}
+
+function otherPermissionRows(permissions: AndroidPermission[], expanded: boolean) {
+  if (!expanded) return [];
+  return permissions.map((permission) => <GrantRow key={permission.name} row={{ icon: "info", title: permission.name }} />);
 }
 
 export function AndroidPermissionRows({ values }: { values: string[] }) {
@@ -66,24 +77,25 @@ export function AndroidPermissionRows({ values }: { values: string[] }) {
       .map((permission) => <GrantRow key={permission.name} row={{
         icon: permissionIcon(permission.label ?? permission.name, permission.group),
         title: permission.label ?? permission.name,
-        detail: permission.dangerous ? "Runtime permission" : undefined,
+        detail: permissionDetail(permission),
       }} />);
     return <Column key={group}>
       <Text style={{ typography: "titleSmall" }} modifiers={[paddingAll(8)]}>{group}</Text>
       {permissionRows}
     </Column>;
   });
-  const otherRows = otherExpanded ? other.map((permission) => <GrantRow key={permission.name} row={{ icon: "info", title: permission.name }} />) : null;
+  const otherRows = otherPermissionRows(other, otherExpanded);
+  const otherHeading = otherExpanded ? "⌃" : "⌄";
 
   return <Column>
     {groupRows}
-    {other.length ? <Column>
+    <Show when={other.length > 0}><Column>
       <Button onClick={() => setOtherExpanded((expanded) => !expanded)}>
-        <Text>{`Other (${other.length}) app-defined permissions ${otherExpanded ? "⌃" : "⌄"}`}</Text>
+        <Text>{`Other (${other.length}) app-defined permissions ${otherHeading}`}</Text>
       </Button>
       {otherRows}
-    </Column> : null}
-    {!descriptions.length ? <Text style={{ typography: "bodyMedium" }}>No permissions are listed.</Text> : null}
+    </Column></Show>
+    <Show when={descriptions.length === 0}><Text style={{ typography: "bodyMedium" }}>No permissions are listed.</Text></Show>
   </Column>;
 }
 
