@@ -5,15 +5,16 @@ const CONTRACT_VERSION = 2;
 const POPULAR_REVISION = 3;
 const CAPABILITIES = ["HAS_REPOSITORIES", "HAS_AGE_RATINGS", "HAS_REVIEWS", "HAS_ANTI_FEATURES", "HAS_PERMISSIONS", "HAS_LOGIN", "REQUIRES_SETUP"];
 const PAGE = 100;
-export type SourceInfo = { version: number; revision: number; name: string; label: string; capabilities: string[] };
+export type SourceInfo = { version: number; revision: number; name: string; label: string; description?: string; addRepoFields?: string[]; capabilities: string[] };
 export function sourceInfo(plugin: string, json: string): SourceInfo {
-  const info = parse<{ version: number; revision: number; name: string; label: string; capabilities: number }>(plugin, "info", json);
+  const info = parse<{ version: number; revision: number; name: string; label: string; description?: string; addRepoFields?: string[]; capabilities: number }>(plugin, "info", json);
   return { ...info, capabilities: CAPABILITIES.filter((_, bit) => (info.capabilities & (1 << bit)) !== 0) };
 }
 type PluginApp = {
   id: string; name: string; summary: string; icon: string; developer: string;
   repo?: string; packageName?: string; listing?: PluginApp;
   description?: string; screenshots?: string[]; permissions?: string[];
+  descriptionMarkdown?: string;
   [key: string]: unknown;
 };
 function parse<T>(plugin: string, call: string, json: string): T {
@@ -21,7 +22,7 @@ function parse<T>(plugin: string, call: string, json: string): T {
 }
 function toApp(plugin: string, app: PluginApp, label?: string): StoreApp {
   const repo = app.repo ?? "1";
-  return { ...app, description: app.description ?? "", screenshots: app.screenshots ?? [], permissions: app.permissions ?? [], source: plugin,
+  return { ...app, description: app.descriptionMarkdown ?? app.description ?? "", screenshots: app.screenshots ?? [], permissions: app.permissions ?? [], source: plugin,
     ref: app.id, repo, origin: repo, repository: repo, sourceLabel: label };
 }
 async function pages<T>(call: (offset: number, limit: number) => Promise<string>, plugin: string, name: string, start = 0, pageSize = PAGE): Promise<T[]> {
@@ -42,16 +43,16 @@ function groupCandidates(plugin: string, apps: StoreApp[]): StoreApp[] {
 }
 export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], label = plugin.label, revision = 0): Source {
   const pkg = plugin.package;
-  let repoUrls: Promise<Map<string, string>> | undefined;
+  let repoUrls: Promise<Map<string, { url: string; label: string }>> | undefined;
   const repoUrl = async (id: string) => {
-    if (id === "1") return id;
-    repoUrls ??= pages<{ id: string; url: string }>((offset, limit) => MatonOS.sourceRepos(pkg, offset, limit), pkg, "repos")
-      .then((repos) => new Map(repos.map((repo) => [repo.id, repo.url])));
-    return (await repoUrls).get(id) ?? id;
+    if (id === "1") return { url: id, label: label ?? pkg };
+    repoUrls ??= pages<{ id: string; url: string; label: string }>((offset, limit) => MatonOS.sourceRepos(pkg, offset, limit), pkg, "repos")
+      .then((repos) => new Map(repos.map((repo) => [repo.id, { url: repo.url, label: repo.label }])));
+    return (await repoUrls).get(id) ?? { url: id, label: label ?? pkg };
   };
   const decorate = async (app: PluginApp) => {
       const result = toApp(pkg, app, label);
-      try { result.origin = await repoUrl(result.repo ?? "1"); }
+      try { const metadata = await repoUrl(result.repo ?? "1"); result.origin = metadata.url; result.sourceLabel = metadata.label; }
       catch (error) {
         // Repository metadata is decoration; a repo index failure must not hide a valid listing.
         console.error(`${pkg}: resolving repository ${result.repo} for ${result.id} failed`, error);
@@ -81,7 +82,9 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
     async details(app) {
       const { listing, ...details } = parse<PluginApp & { listing: PluginApp }>(pkg, "details", await MatonOS.sourceDetails(pkg, app.id, app.repo ?? "1"));
       const result = toApp(pkg, { ...listing, ...details, repo: app.repo ?? listing.repo }, label);
-      result.origin = await repoUrl(result.repo ?? "1");
+      const metadata = await repoUrl(result.repo ?? "1");
+      result.origin = metadata.url;
+      result.sourceLabel = metadata.label;
       result.repository = result.origin;
       return result;
     },

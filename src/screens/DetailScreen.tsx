@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { Linking, ScrollView } from "react-native";
+import { EnrichedMarkdownText } from "react-native-enriched-markdown";
 import { FlatList, View } from "react-native";
-import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, LazyColumn, LinearProgressIndicator, Row, Text } from "@expo/ui/jetpack-compose";
+import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, LinearProgressIndicator, Row, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { height, padding, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import type { StoreApp } from "../sources/Source";
 import { MaterialSymbol } from "../components/MaterialSymbol";
@@ -51,6 +53,7 @@ export function DetailScreen({ app, sources, installed, updateAvailable, busy, b
   progress: string; percent: number | null; canCancel: boolean; error: string;
   onBack: () => void; onInstall: () => void; onRemove: () => void; onOpen: () => void; onCancel: () => void; onChooseSource: (app: StoreApp) => void;
 }) {
+  const colors = useMaterialColors();
   const [tab, setTab] = useState<Tab>("details");
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const actionLabel = busy ? busyLabel : updateAvailable ? "Update" : installed ? "Open" : "Install";
@@ -59,7 +62,13 @@ export function DetailScreen({ app, sources, installed, updateAvailable, busy, b
   const sourceItems = otherSources.map((candidate) => <DropdownMenuItem key={`${candidate.source}:${candidate.id}`} onClick={() => { setSourceMenuOpen(false); onChooseSource(candidate); }}>
     <DropdownMenuItem.Text>{candidate.sourceLabel ?? candidate.source}</DropdownMenuItem.Text>
   </DropdownMenuItem>);
-  return <Host style={{ flex: 1 }}><LazyColumn contentPadding={{ start: 24, top: 20, end: 24, bottom: 24 }} verticalArrangement={{ spacedBy: 14 }}>
+  const markdown = app.descriptionMarkdown ?? app.description ?? app.summary;
+  const openLink = (event: { url: string }) => {
+    try { const url = new URL(event.url); if (url.protocol === "http:" || url.protocol === "https:") void Linking.openURL(url.toString()); }
+    catch (error) { console.error("Opening app description link failed", error); }
+  };
+  return <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 14 }}>
+    <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><Column verticalArrangement={{ spacedBy: 14 }}>
     <Button onClick={onBack}><Text>‹  Back</Text></Button>
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 18 }}>
       {app.icon ? <ComposeImage source={{ uri: app.icon }} contentDescription={`${app.name} icon`} modifiers={[size(96, 96)]} /> : <MaterialSymbol name="apps" size={72} />}
@@ -67,7 +76,7 @@ export function DetailScreen({ app, sources, installed, updateAvailable, busy, b
         <Text style={{ typography: "headlineMedium" }}>{app.name}</Text>
         <Text style={{ typography: "bodyMedium" }}>{app.summary}</Text>
         <Text style={{ typography: "bodySmall" }}>{app.developer}</Text>
-        <Text style={{ typography: "labelSmall" }}>{app.sourceLabel === "Flatpak" ? "Flathub" : app.sourceLabel ?? app.source}</Text>
+        <Text style={{ typography: "labelSmall" }}>{app.sourceLabel ?? app.source}</Text>
       </Column>
     </Row>
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }}>
@@ -89,10 +98,12 @@ export function DetailScreen({ app, sources, installed, updateAvailable, busy, b
       <Button onClick={() => setTab("details")}><Text>Details</Text></Button>
       <Button onClick={() => setTab("permissions")}><Text>Permissions</Text></Button>
     </Row>
-    {tab === "permissions" ? <PermissionList app={app} /> : <Column verticalArrangement={{ spacedBy: 10 }}>
-      <Text style={{ typography: "titleMedium" }}>About this app</Text>
-      <Text style={{ typography: "bodyMedium" }}>{app.description.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || app.summary}</Text>
-      <DetailFacts app={app} />
-    </Column>}
-  </LazyColumn></Host>;
+    {tab === "permissions" ? <PermissionList app={app} /> : <Text style={{ typography: "titleMedium" }}>About this app</Text>}
+    </Column></Host>
+    {tab === "details" ? <EnrichedMarkdownText markdown={markdown} flavor="commonmark" selectable onLinkPress={openLink}
+      markdownStyle={{ paragraph: { fontSize: 14, color: colors.onSurface, lineHeight: 21, marginBottom: 12 },
+        h1: { color: colors.onSurface }, h2: { color: colors.onSurface }, h3: { color: colors.onSurface },
+        list: { color: colors.onSurface, itemSpacing: 5 }, link: { color: colors.primary } }} /> : null}
+    {tab === "details" ? <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><DetailFacts app={app} /></Host> : null}
+  </ScrollView>;
 }

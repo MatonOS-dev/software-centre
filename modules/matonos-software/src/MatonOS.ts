@@ -2,14 +2,6 @@ import { requireNativeModule, type EventSubscription } from "expo-modules-core";
 
 type NativeApi = {
   addListener(name: "linuxAppStoreEvent", listener: (event: StoreEvent) => void): EventSubscription;
-  storeInstall(ref: string, operationId: string): Promise<boolean>;
-  storeUpdate(ref: string, operationId: string): Promise<boolean>;
-  storeUninstall(ref: string, operationId: string): Promise<boolean>;
-  storeListInstalled(): Promise<string>;
-  storeListRemotes(): Promise<string>;
-  startStubInstall(ref: string, operationId: string | null): Promise<boolean>;
-  startStubUpdate(ref: string, operationId: string | null): Promise<boolean>;
-  launchStub(appId: string): Promise<boolean>;
   sourcePlugins(): Promise<SourcePlugin[]>;
   getBrowseCache(key: string): Promise<string | null>;
   setBrowseCache(key: string, value: string): Promise<void>;
@@ -37,18 +29,11 @@ type NativeApi = {
   sourceUninstall(pkg: string, packageName: string, operationId: string): Promise<void>;
 };
 /** An installed store backend app. Preinstalled ones start enabled, others off. */
-export type SourcePlugin = { package: string; service: string; label: string; preinstalled: boolean; enabled: boolean };
 export type StoreEvent = { source?: string; operationId: string; phase: string; percent?: number; bytesDone?: number; bytesTotal?: number; result?: { ok?: boolean; error?: string; output?: string; operationId?: string } };
+export type SourcePlugin = { package: string; service: string; label: string; description?: string; preinstalled: boolean; enabled: boolean };
 const Native = requireNativeModule<NativeApi>("MatonOSClient");
 export const MatonOS = {
-  startStubInstall: (ref: string, operationId?: string) => Native.startStubInstall(ref, operationId ?? null),
-  startStubUpdate: (ref: string, operationId?: string) => Native.startStubUpdate(ref, operationId ?? null),
-  launchStub: (appId: string) => Native.launchStub(appId),
-  storeInstall: (ref: string, operationId: string) => Native.storeInstall(ref, operationId),
-  storeUpdate: (ref: string, operationId: string) => Native.storeUpdate(ref, operationId),
-  storeUninstall: (ref: string, operationId: string) => Native.storeUninstall(ref, operationId),
-  storeListInstalled: () => Native.storeListInstalled(),
-  storeListRemotes: () => Native.storeListRemotes(),
+  addStoreListener: (listener: (event: StoreEvent) => void) => Native.addListener("linuxAppStoreEvent", listener),
   sourcePlugins: () => Native.sourcePlugins(),
   getBrowseCache: (key: string) => Native.getBrowseCache(key),
   setBrowseCache: (key: string, value: string) => Native.setBrowseCache(key, value),
@@ -75,5 +60,4 @@ export const MatonOS = {
   sourceCancel: (pkg: string, operationId: string) => Native.sourceCancel(pkg, operationId),
   sourceRunning: (pkg: string, operationId: string) => Native.sourceRunning(pkg, operationId),
   sourceUninstall: (pkg: string, packageName: string, operationId: string) => Native.sourceUninstall(pkg, packageName, operationId),
-  addStoreListener: (listener: (event: StoreEvent) => void) => Native.addListener("linuxAppStoreEvent", listener),
 };

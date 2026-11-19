@@ -18,8 +18,13 @@ export function MaterialSymbol({ name, size = 22, tint, description }: { name: s
         pending.set(name, request);
       }
       void request.then((result) => {
-        if (result) resolved.set(name, result);
-        if (active) setSource(result);
+        if (result) { resolved.set(name, result); if (active) setSource(result); return; }
+        if (name !== "help") {
+          let fallback = pending.get("help");
+          if (!fallback) { fallback = unstable_getMaterialSymbolSourceAsync("help" as AndroidSymbol, size, "#000000"); pending.set("help", fallback); }
+          void fallback.then((icon) => { if (icon) resolved.set(name, icon); if (active) setSource(icon); })
+            .catch((error: unknown) => console.error(`Loading fallback badge icon for ${name} failed`, error));
+        } else if (active) setSource(null);
       }).catch((error: unknown) => console.error(`Loading Material Symbol ${name} failed`, error));
     }
     return () => { active = false; };

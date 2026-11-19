@@ -19,15 +19,18 @@ export type AppListing = {
   installed?: boolean;
   /** Latest version the source offers. */
   versionName?: string;
-  /** Repository the listing came from (F-Droid repo URL, Flatpak remote). */
+  /** Repository the listing came from. */
   origin?: string;
   repo?: string;
   candidates?: StoreApp[];
+  badges?: Array<{ id: string; label: string; icon: string }>;
+  canLaunch?: boolean;
 };
 
 /** What details() returns: everything known about one app. */
 export type AppDetails = AppListing & {
   description: string;
+  descriptionMarkdown?: string;
   screenshots: string[];
   permissions: string[];
   license?: string;
@@ -37,9 +40,9 @@ export type AppDetails = AppListing & {
   installedSize?: number;
   /** What the app can do and how risky that is. */
   safety?: Safety;
-  /** F-Droid anti-features; [] when the repo lists none, undefined for other sources. */
+  /** Safety annotations supplied by the backend. */
   antiFeatures?: AntiFeature[];
-  /** Flathub only (OARS); undefined when the app declares none. */
+  /** Backend supplied age rating; undefined when the app declares none. */
   ageRating?: AgeRating;
 };
 
@@ -62,13 +65,14 @@ export type ScoredApp = { app: StoreApp; score: number };
 
 export function toListing(app: StoreApp): AppListing {
   return { id: app.id, source: app.source, name: app.name, summary: app.summary, icon: app.icon, developer: app.developer,
-    rating: app.rating, installed: app.installed, versionName: app.versionName, origin: app.origin ?? app.repository };
+    rating: app.rating, installed: app.installed, versionName: app.versionName, origin: app.origin ?? app.repository,
+    badges: app.badges, canLaunch: app.canLaunch };
 }
 
 export function toDetails(app: StoreApp): AppDetails {
   return { ...toListing(app), description: app.description, screenshots: app.screenshots, permissions: app.permissions,
     license: app.license, homepage: app.homepage, downloadSize: app.downloadSize, installedSize: app.installedSize,
-    safety: app.safety, antiFeatures: app.antiFeatures, ageRating: app.ageRating };
+    safety: app.safety, antiFeatures: app.antiFeatures, ageRating: app.ageRating, descriptionMarkdown: app.descriptionMarkdown };
 }
 
 export type Rating = { average: number; count: number; histogram: [number, number, number, number, number] };

@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AppState, FlatList, Linking, ScrollView, View } from "react-native";
+import { AppState, FlatList, ScrollView, View } from "react-native";
 import { AlertDialog, Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Switch, Text, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
-import { clickable, padding, paddingAll, size, weight } from "@expo/ui/jetpack-compose/modifiers";
+import { clickable, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import type { ScoredApp, StoreApp } from "./sources/Source";
 import { MatonOS } from "../modules/matonos-software/src/MatonOS";
-import { runApp } from "./FlatpakBridge";
 import { useSources, setPluginEnabled } from "./hooks/useStore";
 import type { SourcePlugin } from "../modules/matonos-software/src/MatonOS";
 import type { SourceProgress } from "./sources/Source";
@@ -13,10 +12,16 @@ import { sourceInfo } from "./sources/PluginSource";
 import { StorePage, StoreNavRail } from "./components/StoreNavRail";
 import { StoreSourceRow } from "./components/StoreSourceRow";
 import { AppGridSection } from "./components/AppGridSection";
+import { MaterialSymbol } from "./components/MaterialSymbol";
 import { DetailScreen } from "./screens/DetailScreen";
 
-type Repository = { id: string; url: string; label: string; official: boolean; broken: boolean; enabled?: boolean; appCount?: number; lastRefreshed?: number };
+type Repository = { id: string; url: string; label: string; official: boolean; broken: boolean; enabled?: boolean; appCount?: number; lastRefreshed?: number; builtIn?: boolean; removable?: boolean; description?: string };
 type Operation = { app: StoreApp; id: string; kind: "install" | "update" | "uninstall"; progress: string; percent: number | null; error?: string };
+function RepoAddField({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (id: string, value: string) => void }) {
+  const native = useNativeState(value);
+  useEffect(() => { native.set(value); }, [native, value]);
+  return <OutlinedTextField value={native} onValueChange={(next) => { native.set(next); onChange(id, next); }}><OutlinedTextField.Label>{label}</OutlinedTextField.Label></OutlinedTextField>;
+}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
@@ -103,11 +108,10 @@ function progressLabel(phase: string, percent: number | null, bytesDone: number,
   return `${phase || "Working…"}${fraction}${size}`;
 }
 
-function AppTile({ app, installed, updateAvailable, versionText, busy, busyLabel, progress, percent, error, canCancel, onCancel, onOpenDetails, onInstall, onUninstall, onLaunch }: {
+function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, percent, error, canCancel, onCancel, onOpenDetails, onInstall, onLaunch }: {
   app: StoreApp;
   installed: boolean;
   updateAvailable: boolean;
-  versionText?: string;
   busy: boolean;
   busyLabel: string;
   progress: string;
@@ -117,32 +121,34 @@ function AppTile({ app, installed, updateAvailable, versionText, busy, busyLabel
   onCancel: () => void;
   onOpenDetails: (app: StoreApp) => void;
   onInstall: (app: StoreApp) => void;
-  onUninstall: (app: StoreApp) => void;
   onLaunch: (app: StoreApp) => void;
 }) {
-  const isBusy = busy && Boolean(progress);
-  const isFlatpak = app.sourceLabel === "Flatpak";
-  const buttonLabel = app.sourceUnavailable ? "Unavailable" : isBusy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? isFlatpak ? "Open" : "Uninstall" : "Install";
-  const buttonAction = updateAvailable ? () => onInstall(app) : installed ? isFlatpak ? () => onLaunch(app) : () => onUninstall(app) : () => onInstall(app);
+  const isBusy = busy;
+  const buttonLabel = app.sourceUnavailable ? "Unavailable" : isBusy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? "Open" : "Install";
+  const buttonAction = updateAvailable ? () => onInstall(app) : installed ? () => onLaunch(app) : () => onInstall(app);
+  const badgeIcons = app.badges?.map((badge) => <MaterialSymbol key={badge.id} name={badge.icon || "verified"} description={badge.label} />);
   return (
     <Column modifiers={app.sourceUnavailable ? [] : [clickable(() => onOpenDetails(app))]}>
       <Row verticalAlignment="center" modifiers={[paddingAll(12)]}>
-        <AppIcon app={app} imageSize={52} />
+        <AppIcon app={app} imageSize={48} />
         <Column modifiers={[weight(1), padding(12, 0, 12, 0)]}>
-          <Text style={{ typography: "titleMedium" }}>{app.name}</Text>
-          <SourceBadge app={app} />
-          {versionText ? <Text style={{ typography: "bodySmall" }}>{versionText}</Text> : null}
-          {app.rating ? <Text style={{ typography: "bodySmall" }}>{app.rating.average.toFixed(1)} / 5 · {app.rating.count} ratings</Text> : null}
-          <Text style={{ typography: "bodyMedium" }} maxLines={2}>{app.summary}</Text>
+          <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 4 }}>
+            <Text style={{ typography: "titleMedium" }} maxLines={1}>{app.name}</Text>
+            {badgeIcons}
+          </Row>
+          <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 8 }}>
+            <SourceBadge app={app} />
+            {app.rating ? <Text style={{ typography: "bodySmall" }}>{`★ ${app.rating.average.toFixed(1)} (${app.rating.count})`}</Text> : null}
+          </Row>
+          <Text style={{ typography: "bodySmall" }} maxLines={1}>{app.summary}</Text>
         </Column>
-        <Button enabled={!busy && !app.sourceUnavailable} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
+        <Column modifiers={[width(112)]} verticalArrangement={{ spacedBy: 4 }}>
+          {isBusy ? <LinearProgressIndicator progress={percentToRatio(percent)} /> : <Button enabled={!busy && !app.sourceUnavailable} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>}
+          {isBusy ? <ProgressLine progress={progress} /> : null}
+          {error ? <Text style={{ typography: "bodySmall" }} color="#b3261e">{error}</Text> : null}
+        </Column>
       </Row>
-      <Show when={isBusy}>
-        <LinearProgressIndicator progress={percentToRatio(percent)} modifiers={[padding(0, 12, 12, 12)]} />
-        <ProgressLine progress={progress} />
-        <Show when={canCancel}><Button onClick={onCancel}><Text>Cancel</Text></Button></Show>
-      </Show>
-      {error ? <Text style={{ typography: "bodySmall" }} color="#b3261e" modifiers={[padding(12, 0, 12, 12)]}>{error}</Text> : null}
+      <Show when={isBusy && canCancel}><Button onClick={onCancel}><Text>Cancel</Text></Button></Show>
     </Column>
   );
 }
@@ -152,6 +158,8 @@ export default function App() {
   const [plugins, setPlugins] = useState<SourcePlugin[]>([]);
   const [repoSource, setRepoSource] = useState("");
   const [repoRevision, setRepoRevision] = useState(0);
+  const [repoAddFields, setRepoAddFields] = useState<Array<{ id: string; label: string }>>([]);
+  const [repoFieldValues, setRepoFieldValues] = useState<Record<string, string>>({});
   const themeColors = useMaterialColors();
   const [page, setPage] = useState<StorePage>("browse");
   const [repoManager, setRepoManager] = useState(false);
@@ -160,10 +168,8 @@ export default function App() {
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [repoUrl, setRepoUrl] = useState("");
   const [repoName, setRepoName] = useState("");
-  const [repoFingerprint, setRepoFingerprint] = useState("");
   const repoUrlInput = useNativeState("");
   const repoNameInput = useNativeState("");
-  const repoFingerprintInput = useNativeState("");
   const [repoHost, setRepoHost] = useState("");
   const [repoError, setRepoError] = useState("");
   const [repoChecking, setRepoChecking] = useState(false);
@@ -199,44 +205,33 @@ export default function App() {
     try {
       const [rows, info] = await Promise.all([MatonOS.sourceReposAll(pkg), MatonOS.sourceInfo(pkg)]);
       setRepositories(JSON.parse(rows) as Repository[]);
-      setRepoRevision(sourceInfo(pkg, info).revision);
+      const source = sourceInfo(pkg, info);
+      setRepoRevision(source.revision);
+      setRepoAddFields((source.addRepoFields ?? []).map((field) => { const [id, label] = field.split(":", 2); return { id, label }; }));
     } catch (error) { console.error("Repository operation failed", error); setRepoError(errorText(error)); }
   }
 
-  const reviewRepository = useCallback(async (url: string, fingerprint: string) => {
-    setRepoError(""); setRepoUrl(url); setRepoFingerprint(fingerprint); repoUrlInput.set(url); repoFingerprintInput.set(fingerprint);
+  const reviewRepository = useCallback(async (url: string) => {
+    setRepoError(""); setRepoUrl(url); repoUrlInput.set(url);
     try {
       const host = new URL(url).hostname;
       setRepoHost(host);
       if (!repoName.trim()) { setRepoName(host); repoNameInput.set(host); }
     }
     catch (error) { setRepoHost(""); setRepoError(errorText(error)); }
-  }, [repoUrlInput, repoNameInput, repoFingerprintInput, repoName, setRepoError, setRepoUrl, setRepoFingerprint, setRepoHost]);
+  }, [repoUrlInput, repoNameInput, repoName, setRepoError, setRepoUrl, setRepoHost]);
 
-  const handleRepositoryLink = useCallback(async (value: string) => {
-    try {
-      const link = new URL(value);
-      if (link.protocol !== "fdroidrepos:") return;
-      const pkg = "org.matonos.store.fdroid";
-      const info = sourceInfo(pkg, await MatonOS.sourceInfo(pkg));
-      if (!info.capabilities.includes("HAS_REPOSITORIES")) throw new Error("The F-Droid plugin does not manage repositories");
-      const url = link.searchParams.get("url") || `https://${link.host}${link.pathname}`.replace(/\/$/, "");
-      setRepoSource("org.matonos.store.fdroid"); setRepoManager(true); setSelected(null);
-      setRepositories(JSON.parse(await MatonOS.sourceReposAll(pkg)) as Repository[]);
-      await reviewRepository(url, link.searchParams.get("fingerprint") || "");
-    } catch (error) { console.error("Invalid repository link", error); setRepoError("This F-Droid repository link is invalid."); }
-  }, [reviewRepository, setRepoManager, setSelected, setRepoError, setRepoSource, setRepositories]);
 
   async function saveRepository() {
     if (!repoHost || repoChecking) return;
     setRepoChecking(true); setRepoError("");
     try {
       const share = new URL(repoUrl);
-      if (repoFingerprint) share.searchParams.set("fingerprint", repoFingerprint);
+      for (const field of repoAddFields) if (repoFieldValues[field.id]) share.searchParams.set(field.id, repoFieldValues[field.id]);
       await MatonOS.sourceAddRepoNamed(repoSource, repoName.trim() || repoHost, share.toString());
       await refreshRepositories();
       setRepoError("Repository verified and added.");
-      setRepoUrl(""); setRepoName(""); setRepoFingerprint(""); setRepoHost(""); repoUrlInput.set(""); repoNameInput.set(""); repoFingerprintInput.set("");
+      setRepoUrl(""); setRepoName(""); setRepoFieldValues({}); setRepoHost(""); repoUrlInput.set(""); repoNameInput.set("");
     } catch (error) { console.error("Adding repository failed", error); setRepoError(errorText(error)); await refreshRepositories(); }
     finally { setRepoChecking(false); }
   }
@@ -415,11 +410,9 @@ export default function App() {
 
   useEffect(() => {
     const timer = setTimeout(() => { void refreshRepositories(); }, 0);
-    const initialLink = Linking.getInitialURL().then((url) => { if (url) void handleRepositoryLink(url); });
-    const subscription = Linking.addEventListener("url", (event) => void handleRepositoryLink(event.url));
-    return () => { clearTimeout(timer); subscription.remove(); void initialLink; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial collection and links; registry changes refresh app lists below
-  }, [handleRepositoryLink]);
+    return () => { clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial collection; registry changes refresh app lists below
+  }, []);
   useEffect(() => {
     if (sources.length > 0 && !initialInstalledRefresh.current) {
       initialInstalledRefresh.current = true;
@@ -501,20 +494,21 @@ export default function App() {
   }
   async function openRepositorySource(pkg: string) { setRepoSource(pkg); setRepoManager(true); setSelected(null); setRepoError(""); await refreshRepositories(pkg); }
   async function reviewRepositoryFromDialog() {
-    await reviewRepository(repoUrl, repoFingerprint);
+    await reviewRepository(repoUrl);
     setAddingRepository(false);
   }
   const repositoryRows = repositories.map((repository) => <Column key={repository.id} modifiers={[paddingAll(10)]}>
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }}>
       <Column modifiers={[weight(1)]}>
         <Text style={{ typography: "titleMedium" }}>{repository.label}</Text>
+        {repository.description ? <Text style={{ typography: "bodySmall" }}>{repository.description}</Text> : null}
         <Text style={{ typography: "bodySmall" }}>{repository.url}</Text>
         <Text style={{ typography: "bodySmall" }}>{repository.broken ? "Broken: index verification or download failed." : "Trusted repository"}</Text>
         <Text style={{ typography: "bodySmall" }}>{repository.appCount != null && repository.appCount >= 0 ? `${repository.appCount} apps` : "App count not available yet"}</Text>
         <Text style={{ typography: "bodySmall" }}>{repository.lastRefreshed ? `Last refreshed ${new Date(repository.lastRefreshed * 1000).toLocaleString()}` : "Not refreshed yet"}</Text>
       </Column>
       {repoRevision >= 5 ? <Switch value={repository.enabled ?? true} onCheckedChange={(enabled) => void toggleRepository(repository, enabled)} /> : <Text style={{ typography: "labelSmall" }}>Enabled</Text>}
-      {!repository.official ? <Button onClick={() => void removeRepository(repository.id)}><Text>Remove</Text></Button> : null}
+      {repository.removable !== false ? <Button onClick={() => void removeRepository(repository.id)}><Text>Remove</Text></Button> : null}
     </Row>
   </Column>);
   const sourceRows = plugins.map((plugin) => <StoreSourceRow key={plugin.package} plugin={plugin} icon={sourceIcons[plugin.package]} onSettings={() => void openRepositorySource(plugin.package)} onToggle={(enabled) => void togglePlugin({ ...plugin, enabled })} />);
@@ -528,7 +522,11 @@ export default function App() {
     if (next === "sources") {
       try {
         const available = await MatonOS.sourcePlugins();
-        setPlugins(available);
+        const described = await Promise.all(available.map(async (plugin) => {
+          try { const info = sourceInfo(plugin.package, await MatonOS.sourceInfo(plugin.package)); return { ...plugin, label: info.label, description: info.description }; }
+          catch (error) { console.error(`Reading source metadata for ${plugin.package} failed`, error); return plugin; }
+        }));
+        setPlugins(described);
         const icons = await Promise.all(available.map(async (plugin) => [plugin.package, await MatonOS.sourceIcon(plugin.package)] as const));
         setSourceIcons(Object.fromEntries(icons.filter((entry): entry is [string, string] => Boolean(entry[1]))));
       }
@@ -539,22 +537,21 @@ export default function App() {
   async function launchApp(app: StoreApp) {
     setMessage("");
     try {
-      if (app.sourceLabel === "Flatpak") await runApp(app.id.split("/")[1] ?? app.id);
-      else await MatonOS.launchAndroidApp(app.packageName ?? app.id);
+      await MatonOS.launchAndroidApp(app.packageName ?? app.id);
     } catch (error) { setOperationErrors((current) => ({ ...current, [app.ref]: errorText(error) })); }
   }
 
   const renderApp = ({ item }: { item: StoreApp }) => (
       <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }}>
       <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(operations[item.ref])}
-        versionText={updateIds.has(`${item.source}:${item.id}`) ? `${installedApps.find((entry) => entry.source === item.source && entry.id === item.id)?.versionName ?? "Installed"} → ${item.versionName ?? "Available"}` : item.versionName}
         busyLabel={operations[item.ref] ? busyButtonLabel(operations[item.ref].kind) : ""}
         progress={operations[item.ref]?.progress ?? ""} percent={operations[item.ref]?.percent ?? null} error={operationErrors[item.ref]}
         canCancel={Boolean(sources.find((source) => source.name === item.source)?.cancel)} onCancel={() => void cancelOperation(item.ref)}
         onOpenDetails={openDetails}
-        onInstall={(app) => void startInstall(app)} onUninstall={(app) => void startUninstall(app)} onLaunch={(app) => void launchApp(app)} />
+        onInstall={(app) => void startInstall(app)} onLaunch={(app) => void launchApp(app)} />
     </Host>
   );
+  const renderAppRow = (app: StoreApp) => renderApp({ item: app });
   const keyApp = (app: StoreApp) => `${app.source}:${app.id}`;
 
   let content: ReactNode;
@@ -562,7 +559,7 @@ export default function App() {
     content = <Host style={{ flex: 1 }}><LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
       <Button onClick={() => { setRepoManager(false); setRepoError(""); }}><Text>‹  Back to sources</Text></Button>
       <Text style={{ typography: "headlineSmall" }}>Repositories</Text>
-      <Text style={{ typography: "bodyMedium" }}>The Software Center verifies each repository's signed index using the fingerprint you confirm.</Text>
+      <Text style={{ typography: "bodyMedium" }}>Review repository details before adding a source repository.</Text>
       {repositoryRows}
       <Button onClick={() => { setAddingRepository(true); setRepoError(""); }}><Text>Add repository</Text></Button>
       {addingRepository ? <AlertDialog onDismissRequest={() => setAddingRepository(false)}>
@@ -570,15 +567,15 @@ export default function App() {
         <AlertDialog.Text><Column verticalArrangement={{ spacedBy: 10 }}>
           <OutlinedTextField value={repoNameInput} onValueChange={(value) => { setRepoName(value); repoNameInput.set(value); }}><OutlinedTextField.Label>Repository name</OutlinedTextField.Label></OutlinedTextField>
           <OutlinedTextField value={repoUrlInput} onValueChange={(value) => { setRepoUrl(value); repoUrlInput.set(value); }}><OutlinedTextField.Label>HTTPS repository URL</OutlinedTextField.Label></OutlinedTextField>
-          {repoSource.includes("fdroid") ? <OutlinedTextField value={repoFingerprintInput} onValueChange={(value) => { setRepoFingerprint(value); repoFingerprintInput.set(value); }}><OutlinedTextField.Label>Signing fingerprint (SHA-256)</OutlinedTextField.Label></OutlinedTextField> : null}
+          {repoAddFields.map((field) => <RepoAddField key={field.id} id={field.id} label={field.label} value={repoFieldValues[field.id] ?? ""} onChange={(id, value) => setRepoFieldValues((current) => ({ ...current, [id]: value }))} />)}
         </Column></AlertDialog.Text>
         <AlertDialog.DismissButton><Button onClick={() => setAddingRepository(false)}><Text>Cancel</Text></Button></AlertDialog.DismissButton>
         <AlertDialog.ConfirmButton><Button onClick={() => void reviewRepositoryFromDialog()}><Text>Review</Text></Button></AlertDialog.ConfirmButton>
       </AlertDialog> : null}
       {repoHost ? <Column modifiers={[paddingAll(12)]}>
         <Text style={{ typography: "titleMedium" }}>Trust repository at {repoHost}?</Text>
-        <Text style={{ typography: "bodySmall" }}>Fingerprint: {repoFingerprint.replace(/(.{2})/g, "$1:").replace(/:$/, "").toUpperCase()}</Text>
-        <Text style={{ typography: "bodySmall" }}>Review the host and fingerprint before trusting this repository.</Text>
+        {repoAddFields.map((field) => <Text key={field.id} style={{ typography: "bodySmall" }}>{field.label}: {repoFieldValues[field.id] ?? ""}</Text>)}
+        <Text style={{ typography: "bodySmall" }}>Review the repository details before adding it.</Text>
         <Button enabled={!repoChecking} onClick={() => void saveRepository()}><Text>{repoChecking ? "Checking…" : "Trust and add"}</Text></Button>
       </Column> : null}
       <Show when={Boolean(repoError)}><Text style={{ typography: "bodyMedium" }}>{repoError}</Text></Show>
@@ -618,8 +615,8 @@ export default function App() {
     </View>;
   } else {
     content = <ScrollView style={{ flex: 1 }}>
-      <AppGridSection title="Popular" apps={popularApps} installed={installedIds} onOpen={openDetails} loading={collectionLoading.popular} error={collectionErrors.popular} />
-      <AppGridSection title="New" apps={newApps} installed={installedIds} onOpen={openDetails} loading={collectionLoading.new} error={collectionErrors.new} />
+      <AppGridSection title="Popular" apps={popularApps} renderApp={renderAppRow} loading={collectionLoading.popular} error={collectionErrors.popular} />
+      <AppGridSection title="New" apps={newApps} renderApp={renderAppRow} loading={collectionLoading.new} error={collectionErrors.new} />
     </ScrollView>;
   }
 

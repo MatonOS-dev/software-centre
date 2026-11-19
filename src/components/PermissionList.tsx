@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Column, Row, Text } from "@expo/ui/jetpack-compose";
 import { paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
 import { MatonOS } from "../../modules/matonos-software/src/MatonOS";
 import type { StoreApp } from "../sources/Source";
-import { formatFlatpakPermissions, type PermissionRow } from "../sources/FlatpakPermissions";
+type PermissionRow = { icon: string; title: string; detail?: string; broad?: boolean };
 import { MaterialSymbol } from "./MaterialSymbol";
 
 type AndroidPermission = { name: string; label: string | null; group: string | null; groupLabel: string | null; dangerous: boolean };
@@ -31,13 +31,6 @@ function GrantRow({ row }: { row: PermissionRow }) {
     </Column>
     {row.broad ? <Text style={{ typography: "labelSmall" }}>Broad access</Text> : null}
   </Row>;
-}
-
-function FlatpakPermissionRows({ values }: { values: string[] }) {
-  const rows = useMemo(() => formatFlatpakPermissions(values), [values]);
-  const items = rows.map((row, index) => <GrantRow key={`${index}:${row.title}`} row={row} />);
-  if (!rows.length) return <Text style={{ typography: "bodyMedium" }}>No permissions are listed.</Text>;
-  return <Column>{items}</Column>;
 }
 
 export function AndroidPermissionRows({ values }: { values: string[] }) {
@@ -94,7 +87,4 @@ export function AndroidPermissionRows({ values }: { values: string[] }) {
   </Column>;
 }
 
-export function PermissionList({ app }: { app: StoreApp }) {
-  const isFlatpak = app.sourceLabel === "Flatpak";
-  return isFlatpak ? <FlatpakPermissionRows values={app.permissions} /> : <AndroidPermissionRows values={app.permissions} />;
-}
+export function PermissionList({ app }: { app: StoreApp }) { return <AndroidPermissionRows values={app.permissions} />; }
