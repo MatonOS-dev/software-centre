@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, t
 import { AppState, FlatList, ScrollView, View } from "react-native";
 import { Button, Host, OutlinedTextField, Row, Text, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
-import { padding, paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
+import { fillMaxWidth, padding, paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
 import type { ScoredApp, StoreApp } from "./sources/Source";
 import { interleave, mergeNew, mergePopular } from "./sources/Collections";
 import { MatonOS } from "../modules/matonos-software/src/MatonOS";
@@ -193,7 +193,7 @@ export default function App() {
       popularReceived = true;
       const rows = mergePopular(popularResults).slice(0, 250);
       setPopularApps(rows); setCollectionLoading((state) => ({ ...state, popular: false }));
-      void MatonOS.setBrowseCache("popular", JSON.stringify(rows)).catch((error) => console.warn("Writing Popular browse cache failed", error));
+      void MatonOS.setBrowseCache("popular-score-v2", JSON.stringify(rows)).catch((error) => console.warn("Writing Popular browse cache failed", error));
     };
     const publishNew = () => {
       if (request !== requestId.current) return;
@@ -202,12 +202,14 @@ export default function App() {
       setNewApps(rows); setCollectionLoading((state) => ({ ...state, new: false }));
       void MatonOS.setBrowseCache("new", JSON.stringify(rows)).catch((error) => console.warn("Writing New browse cache failed", error));
     };
-    const caches = ["popular", "new"].map(async (key) => {
+    // Popular is versioned because its ordering comes from plugin scores; do not
+    // show a persisted collection from a prior scoring implementation as current.
+    const caches = ["popular-score-v2", "new"].map(async (key) => {
       try {
         const cached = await MatonOS.getBrowseCache(key);
         if (!cached || request !== requestId.current) return;
         const rows = JSON.parse(cached) as StoreApp[];
-        if (key === "popular" && !popularReceived) setPopularApps(rows);
+        if (key === "popular-score-v2" && !popularReceived) setPopularApps(rows);
         if (key === "new" && !newReceived) setNewApps(rows);
       } catch (error) { console.warn(`Reading ${key} browse cache failed`, error); }
     });
@@ -498,7 +500,7 @@ export default function App() {
     <StoreNavRail page={navigationPage(repoManager, page)} updateCount={updateApps.length} onSelect={(next) => void selectPage(next)} />
     <View style={{ flex: 1 }}>
       <Host matchContents={{ vertical: true }}><OutlinedTextField value={searchNative} singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 12, 16, 12)]}>
-        <OutlinedTextField.Placeholder>Search apps</OutlinedTextField.Placeholder>
+        <OutlinedTextField.Placeholder><Text modifiers={[fillMaxWidth()]}>Search apps</Text></OutlinedTextField.Placeholder>
       </OutlinedTextField></Host>
       <Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
         <Show when={repoManager}><Text style={{ typography: "titleMedium" }} modifiers={[padding(16, 0, 16, 0)]}>{plugins.find((plugin) => plugin.package === repoSource)?.label ?? "Source settings"}</Text></Show>

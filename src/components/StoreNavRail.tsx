@@ -1,5 +1,5 @@
-import { Column, Host, Shape, Surface, Text, useMaterialColors, type ShapeJSXElement } from "@expo/ui/jetpack-compose";
-import { paddingAll, fillMaxWidth } from "@expo/ui/jetpack-compose/modifiers";
+import { Column, Host, Row, Shape, Surface, Text, useMaterialColors, type ShapeJSXElement } from "@expo/ui/jetpack-compose";
+import { paddingAll, fillMaxWidth, weight } from "@expo/ui/jetpack-compose/modifiers";
 import { MaterialSymbol } from "./MaterialSymbol";
 import type { ReactNode } from "react";
 
@@ -20,16 +20,16 @@ export function StoreNavRail({ page, updateCount, onSelect }: { page: StorePage;
   const colors = useMaterialColors();
   const rows = items.map((item) => {
     const selected = page === item.page;
-    const content = <Column horizontalAlignment="center" verticalArrangement={{ spacedBy: 4 }} modifiers={[paddingAll(8)]}>
+    const content = <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }} modifiers={[paddingAll(10)]}>
       <Surface color={selected ? colors.secondaryContainer : "transparent"} contentColor={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant} shape={<Shape.Pill /> as ShapeJSXElement}>
-        <Host matchContents><MaterialSymbol name={item.symbol} tint={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant} /></Host>
+        <MaterialSymbol name={item.symbol} tint={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant} />
       </Surface>
-      <Text style={{ typography: "labelMedium" }} color={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant}>{item.title}</Text>
+      <Text modifiers={[weight(1)]} style={{ typography: "labelMedium" }} color={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant}>{item.title}</Text>
       {updateCountBadge(item.page, updateCount, selected ? colors.onSecondaryContainer : colors.onSurfaceVariant)}
-    </Column>;
+    </Row>;
     return <Surface key={item.page} onClick={() => onSelect(item.page)} color="transparent" contentColor={colors.onSurfaceVariant} modifiers={[fillMaxWidth()]}>{content}</Surface>;
   });
-  return <Host matchContents style={{ height: "100%" }}><Column modifiers={[paddingAll(8)]} verticalArrangement={{ spacedBy: 6 }}>
+  return <Host style={{ width: 144, height: "100%" }}><Column modifiers={[paddingAll(12)]} verticalArrangement={{ spacedBy: 8 }}>
     {rows}
   </Column></Host>;
 }
