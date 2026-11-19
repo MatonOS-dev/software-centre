@@ -20,14 +20,15 @@ export function StoreNavRail({ page, updateCount, onSelect }: { page: StorePage;
   const colors = useMaterialColors();
   const rows = items.map((item) => {
     const selected = page === item.page;
-    const content = <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }} modifiers={[paddingAll(10)]}>
-      <Surface color={selected ? colors.secondaryContainer : "transparent"} contentColor={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant} shape={<Shape.Pill /> as ShapeJSXElement}>
-        <MaterialSymbol name={item.symbol} tint={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant} />
-      </Surface>
-      <Text modifiers={[weight(1)]} style={{ typography: "labelMedium" }} color={selected ? colors.onSecondaryContainer : colors.onSurfaceVariant}>{item.title}</Text>
-      {updateCountBadge(item.page, updateCount, selected ? colors.onSecondaryContainer : colors.onSurfaceVariant)}
-    </Row>;
-    return <Surface key={item.page} onClick={() => onSelect(item.page)} color="transparent" contentColor={colors.onSurfaceVariant} modifiers={[fillMaxWidth()]}>{content}</Surface>;
+    const foreground = selected ? colors.onSecondaryContainer : colors.onSurfaceVariant;
+    const content = <Surface color={selected ? colors.secondaryContainer : "transparent"} contentColor={foreground} shape={<Shape.Pill /> as ShapeJSXElement} modifiers={[fillMaxWidth()]}>
+      <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }} modifiers={[paddingAll(10)]}>
+        <Host matchContents><MaterialSymbol name={item.symbol} tint={foreground} /></Host>
+        <Text modifiers={[weight(1)]} style={{ typography: "labelMedium" }} color={foreground}>{item.title}</Text>
+        {updateCountBadge(item.page, updateCount, foreground)}
+      </Row>
+    </Surface>;
+    return <Surface key={item.page} onClick={() => onSelect(item.page)} color="transparent" contentColor={foreground} modifiers={[fillMaxWidth()]}>{content}</Surface>;
   });
   return <Host style={{ width: 144, height: "100%" }}><Column modifiers={[paddingAll(12)]} verticalArrangement={{ spacedBy: 8 }}>
     {rows}
