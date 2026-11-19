@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { AlertDialog, Button, Column, Host, LazyColumn, OutlinedTextField, Row, Slider, Switch, Text, useNativeState } from "@expo/ui/jetpack-compose";
 import { padding, paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
@@ -18,21 +18,23 @@ function TextSetting({ setting, source, onError, reload, onDraft }: { setting: S
   return <OutlinedTextField value={native} enabled={!setting.readOnly} singleLine keyboardOptions={{ imeAction: "done" }} onValueChange={(value) => { native.set(value); onDraft?.(value); }} keyboardActions={{ onDone: (value) => { if (!onDraft) void save(value); } }} modifiers={[padding(12, 4, 12, 4)]}><OutlinedTextField.Label>{setting.label}</OutlinedTextField.Label></OutlinedTextField>;
 }
 
-export function SourceSettingsScreen({ source, label, onBack }: { source: string; label: string; onBack: () => void }) {
+export function SourceSettingsScreen({ source, label, onBack, onChanged }: { source: string; label: string; onBack: () => void; onChanged: () => void }) {
   const [settings, setSettings] = useState<SourceSetting[]>([]); const [error, setError] = useState("");
   const [action, setAction] = useState<SourceSetting | null>(null); const [values, setValues] = useState<Record<string, string>>({});
+  const changedCallback = useRef(onChanged);
+  useEffect(() => { changedCallback.current = onChanged; }, [onChanged]);
   const [confirm, setConfirm] = useState<{ id: string; values: string[]; title: string; message: string } | null>(null);
   const reload = useCallback(async () => { try { setSettings(JSON.parse(await MatonOS.sourceSettings(source)) as SourceSetting[]); setError(""); } catch (failure) { setError(errorText(failure)); } }, [source]);
-  useEffect(() => { let active = true; const load = () => { MatonOS.sourceSettings(source).then((json) => { if (active) { setSettings(JSON.parse(json) as SourceSetting[]); setError(""); } }).catch((failure: unknown) => { if (active) setError(errorText(failure)); }); }; load(); const subscription = AppState.addEventListener("change", (state) => { if (state === "active") load(); }); return () => { active = false; subscription.remove(); }; }, [source]);
+  useEffect(() => { let active = true; const load = () => { MatonOS.sourceSettings(source).then((json) => { if (active) { setSettings(JSON.parse(json) as SourceSetting[]); setError(""); } }).catch((failure: unknown) => { if (active) setError(errorText(failure)); }); }; load(); const subscription = AppState.addEventListener("change", (state) => { if (state === "active") { load(); changedCallback.current(); } }); return () => { active = false; subscription.remove(); }; }, [source]);
   async function run(setting: SourceSetting, args: string[], confirmed = false) {
     try { const result = JSON.parse(await MatonOS.sourceRunAction(source, setting.id, args, confirmed)) as ActionResult;
       if (result.error) { setError(result.error); return; }
       if (result.confirmTitle && result.confirmMessage) { setConfirm({ id: setting.id, values: args, title: result.confirmTitle, message: result.confirmMessage }); return; }
-      setAction(null); setConfirm(null); setValues({}); await reload();
+      setAction(null); setConfirm(null); setValues({}); await reload(); onChanged();
     } catch (failure) { setError(errorText(failure)); }
   }
   async function change(setting: SourceSetting, value: string | null) {
-    try { const failure = await MatonOS.sourceSetSetting(source, setting.id, value); if (failure) setError(failure); else await reload(); }
+    try { const failure = await MatonOS.sourceSetSetting(source, setting.id, value); if (failure) setError(failure); else { await reload(); onChanged(); } }
     catch (failure) { setError(errorText(failure)); }
   }
   const rows = settings.map((setting) => {

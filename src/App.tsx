@@ -379,7 +379,7 @@ export default function App() {
   let content: ReactNode;
   if (settingsOpen) {
     const settingPlugin = plugins.find((plugin) => plugin.package === settingsSource);
-    content = <SourceSettingsScreen source={settingsSource} label={settingPlugin?.label ?? "Source"} onBack={() => setSettingsOpen(false)} />;
+    content = <SourceSettingsScreen source={settingsSource} label={settingPlugin?.label ?? "Source"} onBack={() => setSettingsOpen(false)} onChanged={() => void runSearch(searchText)} />;
   } else if (selected) {
     const currentOperation = operations[selected.ref];
     const currentBusyLabel = currentOperation ? busyButtonLabel(currentOperation.kind) : "";
