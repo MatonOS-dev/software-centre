@@ -7,7 +7,8 @@
     "start": "expo start --dev-client --port 8088",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src app --max-warnings=0",
-    "check:release-linkage": "node scripts/check-release-linkage.mjs"
+    "check:release-linkage": "node scripts/check-release-linkage.mjs",
+    "test:source-settings": "node --experimental-strip-types scripts/test-source-settings.mjs"
   },
   "dependencies": {
     "@expo/ui": "57.0.20",
