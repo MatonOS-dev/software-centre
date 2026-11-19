@@ -96,7 +96,10 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
     },
     async details(app) {
       const { listing, ...details } = parse<PluginApp & { listing: PluginApp }>(pkg, "details", await MatonOS.sourceDetails(pkg, app.id, app.repo ?? "1"));
-      const result = toApp(pkg, { ...listing, ...details, repo: app.repo ?? listing.repo }, label);
+      const options = new Map<string, NonNullable<StoreApp["repoOptions"]>[number]>();
+      for (const option of [...(app.repoOptions ?? []), ...(listing.repoOptions ?? []), ...(details.repoOptions ?? [])]) options.set(option.repoId, option);
+      const repoOptions = options.size ? [...options.values()] : undefined;
+      const result = toApp(pkg, { ...listing, ...details, repo: app.repo ?? listing.repo, repoOptions }, label);
       const metadata = await repoUrl(result.repo ?? "1");
       result.origin = metadata.url;
       result.repository = result.origin;
