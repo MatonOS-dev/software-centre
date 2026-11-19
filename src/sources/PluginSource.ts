@@ -15,6 +15,7 @@ type PluginApp = {
   repo?: string; packageName?: string; listing?: PluginApp;
   description?: string; screenshots?: string[]; permissions?: string[];
   descriptionMarkdown?: string;
+  repoOptions?: Array<{ repoId: string; name: string; version?: string; installable: boolean; note?: string }>;
   [key: string]: unknown;
 };
 function parse<T>(plugin: string, call: string, json: string): T {
@@ -39,7 +40,14 @@ function groupCandidates(plugin: string, apps: StoreApp[]): StoreApp[] {
     const key = app.packageName || app.id;
     const group = groups.get(key) ?? []; group.push(app); groups.set(key, group);
   }
-  return [...groups.values()].map((candidates) => ({ ...candidates[0], candidates }));
+  return [...groups.values()].map((candidates) => {
+    const options = new Map<string, NonNullable<StoreApp["repoOptions"]>[number]>();
+    for (const candidate of candidates) for (const option of candidate.repoOptions ?? []) options.set(option.repoId, option);
+    const repoOptions = options.size ? [...options.values()] : candidates[0].repoOptions;
+    const preferred = repoOptions?.find((option) => option.installable);
+    const first = !candidates[0].installed && preferred ? { ...candidates[0], repo: preferred.repoId } : candidates[0];
+    return { ...first, candidates, repoOptions };
+  });
 }
 export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], label = plugin.label, revision = 0): Source {
   const pkg = plugin.package;
@@ -52,7 +60,7 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
   };
   const decorate = async (app: PluginApp) => {
       const result = toApp(pkg, app, label);
-      try { const metadata = await repoUrl(result.repo ?? "1"); result.origin = metadata.url; result.sourceLabel = metadata.label; }
+      try { const metadata = await repoUrl(result.repo ?? "1"); result.origin = metadata.url; }
       catch (error) {
         // Repository metadata is decoration; a repo index failure must not hide a valid listing.
         console.error(`${pkg}: resolving repository ${result.repo} for ${result.id} failed`, error);
@@ -84,7 +92,6 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
       const result = toApp(pkg, { ...listing, ...details, repo: app.repo ?? listing.repo }, label);
       const metadata = await repoUrl(result.repo ?? "1");
       result.origin = metadata.url;
-      result.sourceLabel = metadata.label;
       result.repository = result.origin;
       return result;
     },

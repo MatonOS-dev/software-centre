@@ -4,6 +4,8 @@ export type { AgeRating, AgeRatingCategory, ContentLevel, AntiFeature, Safety, S
 /** Built-in source name, or a plugin's package name. */
 export type SourceName = string;
 
+export type RepoOption = { repoId: string; name: string; version?: string; installable: boolean; note?: string };
+
 /** What search(), installed() and updates() return: just enough for a list row. */
 export type AppListing = {
   id: string;
@@ -23,6 +25,7 @@ export type AppListing = {
   origin?: string;
   repo?: string;
   candidates?: StoreApp[];
+  repoOptions?: RepoOption[];
   badges?: Array<{ id: string; label: string; icon: string }>;
   canLaunch?: boolean;
 };
@@ -56,6 +59,7 @@ export type StoreApp = AppDetails & {
   repository?: string;
   repo?: string;
   candidates?: StoreApp[];
+  repoOptions?: RepoOption[];
   /** Android package to uninstall when it differs from id (plugin sources). */
   packageName?: string;
   sourceUnavailable?: boolean;
@@ -66,7 +70,7 @@ export type ScoredApp = { app: StoreApp; score: number };
 export function toListing(app: StoreApp): AppListing {
   return { id: app.id, source: app.source, name: app.name, summary: app.summary, icon: app.icon, developer: app.developer,
     rating: app.rating, installed: app.installed, versionName: app.versionName, origin: app.origin ?? app.repository,
-    badges: app.badges, canLaunch: app.canLaunch };
+    badges: app.badges, repoOptions: app.repoOptions, canLaunch: app.canLaunch };
 }
 
 export function toDetails(app: StoreApp): AppDetails {

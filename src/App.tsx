@@ -108,7 +108,7 @@ function progressLabel(phase: string, percent: number | null, bytesDone: number,
   return `${phase || "Working…"}${fraction}${size}`;
 }
 
-function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, percent, error, canCancel, onCancel, onOpenDetails, onInstall, onLaunch }: {
+function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, percent, error, onOpenDetails, onInstall, onLaunch }: {
   app: StoreApp;
   installed: boolean;
   updateAvailable: boolean;
@@ -117,8 +117,6 @@ function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, p
   progress: string;
   percent: number | null;
   error?: string;
-  canCancel: boolean;
-  onCancel: () => void;
   onOpenDetails: (app: StoreApp) => void;
   onInstall: (app: StoreApp) => void;
   onLaunch: (app: StoreApp) => void;
@@ -148,7 +146,6 @@ function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, p
           {error ? <Text style={{ typography: "bodySmall" }} color="#b3261e">{error}</Text> : null}
         </Column>
       </Row>
-      <Show when={isBusy && canCancel}><Button onClick={onCancel}><Text>Cancel</Text></Button></Show>
     </Column>
   );
 }
@@ -184,7 +181,6 @@ export default function App() {
   const [installedError, setInstalledError] = useState("");
   const [selected, setSelected] = useState<StoreApp | null>(null);
   const [detailError, setDetailError] = useState("");
-  const [relatedApps, setRelatedApps] = useState<StoreApp[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [searchErrors, setSearchErrors] = useState<Array<{ source: string; message: string }>>([]);
@@ -361,16 +357,20 @@ export default function App() {
   }
 
   async function openDetails(app: StoreApp) {
-    setSelected(app); setMessage(""); setDetailError(""); setRelatedApps([app]);
-    const candidates = await Promise.allSettled(sources.map((source) => source.search(app.id)));
-    const matches = candidates.flatMap((result) => result.status === "fulfilled" ? result.value.filter((candidate) => candidate.id === app.id) : []);
-    const unique = [...new Map([app, ...matches].map((candidate) => [`${candidate.source}:${candidate.id}`, candidate])).values()];
-    setRelatedApps(unique);
+    setSelected(app); setMessage(""); setDetailError("");
     try {
       const source = sources.find((candidate) => candidate.name === app.source);
       if (!source) throw new Error("This app's source is no longer enabled.");
       setSelected(await source.details(app));
     } catch (error) { setDetailError(errorText(error)); }
+  }
+
+  async function chooseRepository(repoId: string) {
+    if (!selected || selected.repo === repoId) return;
+    const next = { ...selected, repo: repoId }; setSelected(next);
+    if (next.repoOptions?.find((option) => option.repoId === repoId)?.installable === false) { setDetailError(""); return; }
+    try { const source = sources.find((candidate) => candidate.name === next.source); if (source) setSelected(await source.details(next)); }
+    catch (error) { setDetailError(errorText(error)); }
   }
 
   async function startInstall(app: StoreApp | null = selected) {
@@ -546,9 +546,8 @@ export default function App() {
       <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(operations[item.ref])}
         busyLabel={operations[item.ref] ? busyButtonLabel(operations[item.ref].kind) : ""}
         progress={operations[item.ref]?.progress ?? ""} percent={operations[item.ref]?.percent ?? null} error={operationErrors[item.ref]}
-        canCancel={Boolean(sources.find((source) => source.name === item.source)?.cancel)} onCancel={() => void cancelOperation(item.ref)}
         onOpenDetails={openDetails}
-        onInstall={(app) => void startInstall(app)} onLaunch={(app) => void launchApp(app)} />
+        onInstall={(app) => { const option = app.repoOptions?.find((entry) => entry.installable); void startInstall(option ? { ...app, repo: option.repoId } : app); }} onLaunch={(app) => void launchApp(app)} />
     </Host>
   );
   const renderAppRow = (app: StoreApp) => renderApp({ item: app });
@@ -581,12 +580,11 @@ export default function App() {
       <Show when={Boolean(repoError)}><Text style={{ typography: "bodyMedium" }}>{repoError}</Text></Show>
     </LazyColumn></Host>;
   } else if (selected) {
-    const detailChoices = relatedApps.filter((app) => app.id === selected.id);
     const currentOperation = operations[selected.ref];
-    content = <DetailScreen app={selected} sources={detailChoices} installed={installedIds.has(`${selected.source}:${selected.id}`)} updateAvailable={updateIds.has(`${selected.source}:${selected.id}`)} busy={Boolean(currentOperation)}
+    content = <DetailScreen app={selected} installed={installedIds.has(`${selected.source}:${selected.id}`)} updateAvailable={updateIds.has(`${selected.source}:${selected.id}`)} busy={Boolean(currentOperation)}
       busyLabel={currentOperation ? busyButtonLabel(currentOperation.kind) : ""} progress={currentOperation?.progress ?? ""} percent={currentOperation?.percent ?? null}
       canCancel={Boolean(sources.find((source) => source.name === selected.source)?.cancel)} error={operationErrors[selected.ref] ?? detailError}
-      onCancel={() => void cancelOperation(selected.ref)} onBack={() => setSelected(null)} onInstall={() => void startInstall(selected)} onRemove={() => void startUninstall(selected)} onOpen={() => void launchApp(selected)} onChooseSource={openDetails} />;
+      onCancel={() => void cancelOperation(selected.ref)} onBack={() => setSelected(null)} onInstall={() => void startInstall(selected)} onRemove={() => void startUninstall(selected)} onOpen={() => void launchApp(selected)} onChooseRepository={(repoId) => void chooseRepository(repoId)} />;
   } else if (page === "sources") {
     content = <Host style={{ flex: 1 }}><LazyColumn contentPadding={{ start: 20, top: 18, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
       <Text style={{ typography: "headlineSmall" }}>Sources</Text>

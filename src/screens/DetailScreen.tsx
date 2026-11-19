@@ -47,20 +47,22 @@ function DetailFacts({ app }: { app: StoreApp }) {
   return <Column>{elements}</Column>;
 }
 
-export function DetailScreen({ app, sources, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, error,
-  onBack, onInstall, onRemove, onOpen, onCancel, onChooseSource }: {
-  app: StoreApp; sources: StoreApp[]; installed: boolean; updateAvailable: boolean; busy: boolean; busyLabel: string;
+export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, error,
+  onBack, onInstall, onRemove, onOpen, onCancel, onChooseRepository }: {
+  app: StoreApp; installed: boolean; updateAvailable: boolean; busy: boolean; busyLabel: string;
   progress: string; percent: number | null; canCancel: boolean; error: string;
-  onBack: () => void; onInstall: () => void; onRemove: () => void; onOpen: () => void; onCancel: () => void; onChooseSource: (app: StoreApp) => void;
+  onBack: () => void; onInstall: () => void; onRemove: () => void; onOpen: () => void; onCancel: () => void; onChooseRepository: (repoId: string) => void;
 }) {
   const colors = useMaterialColors();
   const [tab, setTab] = useState<Tab>("details");
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const actionLabel = busy ? busyLabel : updateAvailable ? "Update" : installed ? "Open" : "Install";
   const action = updateAvailable ? onInstall : installed ? onOpen : onInstall;
-  const otherSources = sources.filter((candidate) => candidate.source !== app.source);
-  const sourceItems = otherSources.map((candidate) => <DropdownMenuItem key={`${candidate.source}:${candidate.id}`} onClick={() => { setSourceMenuOpen(false); onChooseSource(candidate); }}>
-    <DropdownMenuItem.Text>{candidate.sourceLabel ?? candidate.source}</DropdownMenuItem.Text>
+  const actionNeedsRepository = updateAvailable || !installed;
+  const repoOptions = app.repoOptions ?? [];
+  const selectedRepository = repoOptions.find((option) => option.repoId === app.repo);
+  const repositoryItems = repoOptions.map((option) => <DropdownMenuItem key={option.repoId} onClick={() => { setSourceMenuOpen(false); onChooseRepository(option.repoId); }}>
+    <DropdownMenuItem.Text>{`${option.name}${option.version ? ` · ${option.version}` : ""}${option.repoId === app.repo ? " ✓" : ""}${!option.installable && option.note ? ` — ${option.note}` : ""}`}</DropdownMenuItem.Text>
   </DropdownMenuItem>);
   const markdown = app.descriptionMarkdown ?? app.description ?? app.summary;
   const openLink = (event: { url: string }) => {
@@ -80,13 +82,14 @@ export function DetailScreen({ app, sources, installed, updateAvailable, busy, b
       </Column>
     </Row>
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }}>
-      <Button enabled={!busy} onClick={action}><Text>{actionLabel}</Text></Button>
+      <Button enabled={!busy && (!actionNeedsRepository || (selectedRepository?.installable ?? true))} onClick={action}><Text>{actionLabel}</Text></Button>
       {installed ? <Button enabled={!busy} onClick={onRemove}><Text>Remove</Text></Button> : null}
-      {otherSources.length ? <DropdownMenu expanded={sourceMenuOpen} onDismissRequest={() => setSourceMenuOpen(false)}>
-        <DropdownMenu.Trigger><Button onClick={() => setSourceMenuOpen(true)}><Text>Also available from ▾</Text></Button></DropdownMenu.Trigger>
-        <DropdownMenu.Items>{sourceItems}</DropdownMenu.Items>
+      {repoOptions.length > 1 ? <DropdownMenu expanded={sourceMenuOpen} onDismissRequest={() => setSourceMenuOpen(false)}>
+        <DropdownMenu.Trigger><Button onClick={() => setSourceMenuOpen(true)}><Text>{`${selectedRepository?.name ?? "Choose repository"} ▾`}</Text></Button></DropdownMenu.Trigger>
+        <DropdownMenu.Items>{repositoryItems}</DropdownMenu.Items>
       </DropdownMenu> : null}
     </Row>
+    {selectedRepository?.note ? <Text style={{ typography: "bodySmall" }}>{selectedRepository.note}</Text> : null}
     {progress ? <Column verticalArrangement={{ spacedBy: 6 }}>
       <LinearProgressIndicator progress={percent === null ? null : Math.min(1, Math.max(0, percent / 100))} />
       <Text style={{ typography: "bodySmall" }}>{progress}</Text>
