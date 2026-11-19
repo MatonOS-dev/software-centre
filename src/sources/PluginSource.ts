@@ -1,11 +1,11 @@
 import { MatonOS, type SourcePlugin } from "../../modules/matonos-software/src/MatonOS";
 import type { Review, ScoredApp, Source, SourceProgress, StoreApp } from "./Source";
 
-const CONTRACT_VERSION = 2;
+const CONTRACT_VERSION = 3;
 const POPULAR_REVISION = 3;
-const CAPABILITIES = ["HAS_REPOSITORIES", "HAS_AGE_RATINGS", "HAS_REVIEWS", "HAS_ANTI_FEATURES", "HAS_PERMISSIONS", "HAS_LOGIN", "REQUIRES_SETUP"];
+const CAPABILITIES = ["HAS_REPOSITORIES", "HAS_AGE_RATINGS", "HAS_REVIEWS", "HAS_ANTI_FEATURES", "HAS_PERMISSIONS", "", "REQUIRES_SETUP"];
 const PAGE = 100;
-export type SourceInfo = { version: number; revision: number; name: string; label: string; description?: string; addRepoFields?: string[]; capabilities: string[] };
+export type SourceInfo = { version: number; revision: number; name: string; label: string; description?: string; capabilities: string[] };
 export function sourceInfo(plugin: string, json: string): SourceInfo {
   const info = parse<{ version: number; revision: number; name: string; label: string; description?: string; addRepoFields?: string[]; capabilities: number }>(plugin, "info", json);
   return { ...info, capabilities: CAPABILITIES.filter((_, bit) => (info.capabilities & (1 << bit)) !== 0) };
@@ -51,31 +51,7 @@ function groupCandidates(plugin: string, apps: StoreApp[]): StoreApp[] {
 }
 export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], label = plugin.label, revision = 0): Source {
   const pkg = plugin.package;
-  let repoUrls: Promise<Map<string, { url: string; label: string }>> | undefined;
-  const repoUrl = async (id: string) => {
-    if (id === "1") return { url: id, label: label ?? pkg };
-    repoUrls ??= pages<{ id: string; url: string; label: string }>((offset, limit) => MatonOS.sourceRepos(pkg, offset, limit), pkg, "repos")
-      .then((repos) => new Map(repos.map((repo) => [repo.id, { url: repo.url, label: repo.label }])));
-    return (await repoUrls).get(id) ?? { url: id, label: label ?? pkg };
-  };
-  const decorate = async (app: PluginApp) => {
-      const result = toApp(pkg, app, label);
-      try {
-        const metadata = await repoUrl(result.repo ?? "1"); result.origin = metadata.url;
-        if (result.installed && result.repo && !(result.repoOptions ?? []).some((option) => option.repoId === result.repo)) {
-          const hasBackendOptions = result.repoOptions !== undefined;
-          result.repoOptions = [...(result.repoOptions ?? []), { repoId: result.repo, name: metadata.label, installable: !hasBackendOptions,
-            ...(hasBackendOptions ? { note: "Installed repository is no longer an available update source" } : {}) }];
-        }
-      }
-      catch (error) {
-        // Repository metadata is decoration; a repo index failure must not hide a valid listing.
-        console.error(`${pkg}: resolving repository ${result.repo} for ${result.id} failed`, error);
-        result.origin = result.repo ?? "1";
-      }
-      result.repository = result.origin;
-      return result;
-  };
+  const decorate = async (app: PluginApp) => toApp(pkg, app, label);
   const list = async (call: string, getter: (offset: number, limit: number) => Promise<string>) =>
     Promise.all((await pages<PluginApp>(getter, pkg, call)).map(decorate));
   return {
@@ -100,9 +76,6 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
       for (const option of [...(app.repoOptions ?? []), ...(listing.repoOptions ?? []), ...(details.repoOptions ?? [])]) options.set(option.repoId, option);
       const repoOptions = options.size ? [...options.values()] : undefined;
       const result = toApp(pkg, { ...listing, ...details, repo: app.repo ?? listing.repo, repoOptions }, label);
-      const metadata = await repoUrl(result.repo ?? "1");
-      result.origin = metadata.url;
-      result.repository = result.origin;
       return result;
     },
     async reviews(app) {

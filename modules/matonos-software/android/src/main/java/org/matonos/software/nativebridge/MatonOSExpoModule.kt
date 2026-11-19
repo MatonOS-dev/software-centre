@@ -41,7 +41,18 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("sourcePopularApps") { pkg: String, limit: Int ->
       val rows = sourceCall(pkg) { it.getPopularApps(limit) }; applyStoredOrigins(pkg, rows.map { it.app }.toTypedArray()); json.toJson(rows)
     }
-    AsyncFunction("sourceSetRepoEnabled") { pkg: String, id: String, enabled: Boolean -> sourceCall(pkg) { it.setRepoEnabled(id, enabled) } }
+    AsyncFunction("sourceSettings") { pkg: String -> json.toJson(sourceCall(pkg) { it.settings() }) }
+    AsyncFunction("sourceSetSetting") { pkg: String, id: String, value: String? -> sourceCall(pkg) { it.setSetting(id, value) } }
+    AsyncFunction("sourceRunAction") { pkg: String, id: String, values: List<String>, confirmed: Boolean ->
+      val result = sourceCall(pkg) { it.runAction(id, values.toTypedArray(), confirmed) }
+      if (result.launch) {
+        val context = requireNotNull(appContext.reactContext)
+        val intent = android.content.Intent("org.matonos.store.SOURCE_LOGIN").setPackage(pkg).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (context.packageManager.resolveActivity(intent, 0) == null) throw IllegalStateException("No source activity for action $id")
+        context.startActivity(intent)
+      }
+      json.toJson(result)
+    }
     AsyncFunction("describeAndroidPermissions") { names: List<String> ->
       val context = requireNotNull(appContext.reactContext)
       json.toJson(names.distinct().map { name ->
@@ -98,13 +109,6 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("sourceUpdates") { pkg: String, offset: Int, limit: Int ->
       val rows = sourceCall(pkg) { it.updates(offset, limit) }; applyStoredOrigins(pkg, rows); json.toJson(rows)
     }
-    AsyncFunction("sourceRepos") { pkg: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.repos(offset, limit) }) }
-    AsyncFunction("sourceAddRepo") { pkg: String, url: String -> sourceCall(pkg) { it.addRepo(url) } }
-    AsyncFunction("sourceAddRepoNamed") { pkg: String, name: String, url: String -> sourceCall(pkg) { source ->
-      if (source.info().revision >= 6) source.addRepoNamed(name, url)
-      else { android.util.Log.w("MatonOSStore", "Source $pkg contract revision ${source.info().revision} ignores repository name"); source.addRepo(url) }
-    } }
-    AsyncFunction("sourceDelRepo") { pkg: String, id: String -> sourceCall(pkg) { it.delRepo(id) } }
     AsyncFunction("sourceInstall") { pkg: String, id: String, repo: String, operationId: String -> requirePlugins().install(pkg, id, repo, operationId) }
     AsyncFunction("sourceCancel") { pkg: String, operationId: String -> requirePlugins().cancel(pkg, operationId) }
     AsyncFunction("sourceRunning") { pkg: String, operationId: String -> requirePlugins().running(pkg, operationId) }

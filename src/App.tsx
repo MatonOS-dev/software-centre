@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { AppState, FlatList, ScrollView, View } from "react-native";
 import { Button, Host, OutlinedTextField, Row, Text, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
@@ -15,7 +15,7 @@ import { StoreSourceRow } from "./components/StoreSourceRow";
 import { AppGridSection } from "./components/AppGridSection";
 import { AppTile, busyButtonLabel, progressLabel } from "./components/AppTile";
 import { DetailScreen } from "./screens/DetailScreen";
-import { RepositoryManagerScreen, type Repository, type RepoField } from "./screens/RepositoryManagerScreen";
+import { SourceSettingsScreen } from "./screens/SourceSettingsScreen";
 import { SourcesScreen } from "./screens/SourcesScreen";
 import { Show } from "./components/Show";
 
@@ -42,11 +42,6 @@ function searchEmptyState(loading: boolean, errors: Array<{ source: string; mess
   return <Host style={{ width: "100%", height: 64 }}><Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text></Host>;
 }
 
-function navigationPage(repositoryManager: boolean, page: StorePage): StorePage {
-  if (repositoryManager) return "sources";
-  return page;
-}
-
 function AppTileRow({ item, installedIds, updateIds, operations, operationErrors, onOpenDetails, onInstall, onLaunch }: {
   item: StoreApp; installedIds: Set<string>; updateIds: Set<string>; operations: Record<string, Operation>; operationErrors: Record<string, string>;
   onOpenDetails: (app: StoreApp) => void; onInstall: (app?: StoreApp | null) => Promise<void>; onLaunch: (app: StoreApp) => Promise<void>;
@@ -67,24 +62,12 @@ function AppTileRow({ item, installedIds, updateIds, operations, operationErrors
 export default function App() {
   const sources = useSources();
   const [plugins, setPlugins] = useState<SourcePlugin[]>([]);
-  const [repoSource, setRepoSource] = useState("");
-  const [repoRevision, setRepoRevision] = useState(0);
-  const [repoAddFields, setRepoAddFields] = useState<RepoField[]>([]);
-  const [repoFieldValues, setRepoFieldValues] = useState<Record<string, string>>({});
+  const [settingsSource, setSettingsSource] = useState("");
   const themeColors = useMaterialColors();
   const [page, setPage] = useState<StorePage>("browse");
-  const [repoManager, setRepoManager] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const searchNative = useNativeState("");
-  const [repositories, setRepositories] = useState<Repository[]>([]);
-  const [repoUrl, setRepoUrl] = useState("");
-  const [repoName, setRepoName] = useState("");
-  const repoUrlInput = useNativeState("");
-  const repoNameInput = useNativeState("");
-  const [repoHost, setRepoHost] = useState("");
-  const [repoError, setRepoError] = useState("");
-  const [repoChecking, setRepoChecking] = useState(false);
-  const [addingRepository, setAddingRepository] = useState(false);
   const [apps, setApps] = useState<StoreApp[]>([]);
   const [popularApps, setPopularApps] = useState<StoreApp[]>([]);
   const [newApps, setNewApps] = useState<StoreApp[]>([]);
@@ -109,53 +92,6 @@ export default function App() {
     if (change === null) { const next = { ...current }; delete next[ref]; return next; }
     return { ...current, [ref]: change };
   });
-
-  async function refreshRepositories(pkg = repoSource) {
-    if (!pkg) { setRepositories([]); return; }
-    try {
-      const [rows, info] = await Promise.all([MatonOS.sourceReposAll(pkg), MatonOS.sourceInfo(pkg)]);
-      setRepositories(JSON.parse(rows) as Repository[]);
-      const source = sourceInfo(pkg, info);
-      setRepoRevision(source.revision);
-      setRepoAddFields((source.addRepoFields ?? []).map((field) => { const [id, label] = field.split(":", 2); return { id, label }; }));
-    } catch (error) { console.error("Repository operation failed", error); setRepoError(errorText(error)); }
-  }
-
-  const reviewRepository = useCallback(async (url: string) => {
-    setRepoError(""); setRepoUrl(url); repoUrlInput.set(url);
-    try {
-      const host = new URL(url).hostname;
-      setRepoHost(host);
-      if (!repoName.trim()) { setRepoName(host); repoNameInput.set(host); }
-    }
-    catch (error) { setRepoHost(""); setRepoError(errorText(error)); }
-  }, [repoUrlInput, repoNameInput, repoName, setRepoError, setRepoUrl, setRepoHost]);
-
-
-  async function saveRepository() {
-    if (!repoHost || repoChecking) return;
-    setRepoChecking(true); setRepoError("");
-    try {
-      const share = new URL(repoUrl);
-      for (const field of repoAddFields) if (repoFieldValues[field.id]) share.searchParams.set(field.id, repoFieldValues[field.id]);
-      await MatonOS.sourceAddRepoNamed(repoSource, repoName.trim() || repoHost, share.toString());
-      await refreshRepositories();
-      setRepoError("Repository verified and added.");
-      setRepoUrl(""); setRepoName(""); setRepoFieldValues({}); setRepoHost(""); repoUrlInput.set(""); repoNameInput.set("");
-    } catch (error) { console.error("Adding repository failed", error); setRepoError(errorText(error)); await refreshRepositories(); }
-    finally { setRepoChecking(false); }
-  }
-
-  async function removeRepository(repository: string) {
-    try { await MatonOS.sourceDelRepo(repoSource, repository); await refreshRepositories(); await runSearch(""); }
-    catch (error) { setRepoError(errorText(error)); }
-  }
-
-  async function toggleRepository(repository: Repository, enabled: boolean) {
-    if (repoRevision < 5) { console.error(`${repoSource}: repository enable switch unavailable at contract revision ${repoRevision}`); return; }
-    try { await MatonOS.sourceSetRepoEnabled(repoSource, repository.id, enabled); await refreshRepositories(); await runSearch(""); }
-    catch (error) { console.error(`Changing repository state failed id=${repository.id}`, error); setRepoError(errorText(error)); }
-  }
 
   async function refreshInstalled() {
     setInstalledError("");
@@ -325,11 +261,6 @@ export default function App() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => { void refreshRepositories(); }, 0);
-    return () => { clearTimeout(timer); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial collection; registry changes refresh app lists below
-  }, []);
-  useEffect(() => {
     if (sources.length > 0 && !initialInstalledRefresh.current) {
       initialInstalledRefresh.current = true;
       void refreshInstalled();
@@ -403,22 +334,18 @@ export default function App() {
       if (plugin.enabled) {
         setApps((current) => current.filter((app) => app.source !== plugin.package));
         if (selected?.source === plugin.package) setSelected(null);
-        if (repoSource === plugin.package) setRepoManager(false);
+        if (settingsSource === plugin.package) setSettingsOpen(false);
       }
     }
     catch (error) { console.error("Toggling plugin failed", error); setMessage(errorText(error)); }
   }
-  async function openRepositorySource(pkg: string) { setRepoSource(pkg); setRepoManager(true); setSelected(null); setRepoError(""); await refreshRepositories(pkg); }
-  async function reviewRepositoryFromDialog() {
-    await reviewRepository(repoUrl);
-    setAddingRepository(false);
-  }
-  const sourceRows = plugins.map((plugin) => <StoreSourceRow key={plugin.package} plugin={plugin} icon={sourceIcons[plugin.package]} onSettings={() => void openRepositorySource(plugin.package)} onToggle={(enabled) => void togglePlugin({ ...plugin, enabled })} />);
+  function openSourceSettings(pkg: string) { setSettingsSource(pkg); setSettingsOpen(true); setSelected(null); }
+  const sourceRows = plugins.map((plugin) => <StoreSourceRow key={plugin.package} plugin={plugin} icon={sourceIcons[plugin.package]} onSettings={() => openSourceSettings(plugin.package)} onToggle={(enabled) => void togglePlugin({ ...plugin, enabled })} />);
   const searchErrorRows = searchErrors.map((error) => <Host key={error.source} matchContents={{ vertical: true }}><Text style={{ typography: "bodySmall" }} modifiers={[paddingAll(12)]}>{error.source} results failed: {error.message}</Text></Host>);
 
   async function selectPage(next: StorePage) {
     setPage(next); setSelected(null); setMessage("");
-    setRepoManager(false);
+    setSettingsOpen(false);
     if (next === "installed") await refreshInstalled();
     if (next === "updates") await refreshUpdates();
     if (next === "sources") {
@@ -450,12 +377,9 @@ export default function App() {
   const keyApp = (app: StoreApp) => `${app.source}:${app.id}`;
 
   let content: ReactNode;
-  if (repoManager) {
-    content = <RepositoryManagerScreen repositories={repositories} revision={repoRevision} fields={repoAddFields} fieldValues={repoFieldValues} error={repoError} host={repoHost} checking={repoChecking} adding={addingRepository} repoNameInput={repoNameInput} repoUrlInput={repoUrlInput}
-      onBack={() => { setRepoManager(false); setRepoError(""); }} onAdd={() => { setAddingRepository(true); setRepoError(""); }} onDismissAdd={() => setAddingRepository(false)} onReviewAdd={() => void reviewRepositoryFromDialog()}
-      onSetField={(id, value) => setRepoFieldValues((current) => ({ ...current, [id]: value }))}
-      onSetName={(value) => { setRepoName(value); repoNameInput.set(value); }} onSetUrl={(value) => { setRepoUrl(value); repoUrlInput.set(value); }}
-      onToggle={(repository, enabled) => void toggleRepository(repository, enabled)} onRemove={(id) => void removeRepository(id)} onSave={() => void saveRepository()} />;
+  if (settingsOpen) {
+    const settingPlugin = plugins.find((plugin) => plugin.package === settingsSource);
+    content = <SourceSettingsScreen source={settingsSource} label={settingPlugin?.label ?? "Source"} onBack={() => setSettingsOpen(false)} />;
   } else if (selected) {
     const currentOperation = operations[selected.ref];
     const currentBusyLabel = currentOperation ? busyButtonLabel(currentOperation.kind) : "";
@@ -497,14 +421,11 @@ export default function App() {
   }
 
   return <View style={{ flex: 1, flexDirection: "row", backgroundColor: themeColors.background }}>
-    <StoreNavRail page={navigationPage(repoManager, page)} updateCount={updateApps.length} onSelect={(next) => void selectPage(next)} />
+    <StoreNavRail page={page} updateCount={updateApps.length} onSelect={(next) => void selectPage(next)} />
     <View style={{ flex: 1 }}>
       <Host matchContents={{ vertical: true }}><OutlinedTextField value={searchNative} singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 12, 16, 12)]}>
         <OutlinedTextField.Placeholder><Text modifiers={[fillMaxWidth()]}>Search apps</Text></OutlinedTextField.Placeholder>
       </OutlinedTextField></Host>
-      <Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
-        <Show when={repoManager}><Text style={{ typography: "titleMedium" }} modifiers={[padding(16, 0, 16, 0)]}>{plugins.find((plugin) => plugin.package === repoSource)?.label ?? "Source settings"}</Text></Show>
-      </Host>
       {content}
     </View>
   </View>;
