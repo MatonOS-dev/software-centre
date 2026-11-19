@@ -49,7 +49,12 @@ function groupCandidates(plugin: string, apps: StoreApp[]): StoreApp[] {
     return { ...first, candidates, repoOptions };
   });
 }
-export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], label = plugin.label, revision = 0): Source {
+// Revision gates count within API version 2; any later API version includes all of them.
+function hasRevision(version: number, revision: number, minimum: number): boolean {
+  return version > 2 || revision >= minimum;
+}
+
+export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], label = plugin.label, revision = 0, version = 2): Source {
   const pkg = plugin.package;
   const decorate = async (app: PluginApp) => toApp(pkg, app, label);
   const list = async (call: string, getter: (offset: number, limit: number) => Promise<string>) =>
@@ -58,13 +63,13 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
     name: pkg, label, capabilities,
     async search(term) { return groupCandidates(pkg, await list("search", (offset, limit) => MatonOS.sourceSearch(pkg, term, offset, limit))); },
     async collection(kind, offset, limit) {
-      if (revision < 2) return [];
+      if (!hasRevision(version, revision, 2)) return [];
       const page = parse<PluginApp[]>(pkg, "collection", await MatonOS.sourceCollection(pkg, kind, offset, limit));
       return groupCandidates(pkg, await Promise.all(page.map(decorate)));
     },
     async getPopularApps(limit): Promise<ScoredApp[]> {
-      if (revision < POPULAR_REVISION) {
-        console.error(`${pkg}: popular apps skipped; source contract revision ${revision} has no scored popularity call`);
+      if (!hasRevision(version, revision, POPULAR_REVISION)) {
+        console.error(`${pkg}: popular apps skipped; source contract ${version}.${revision} has no scored popularity call`);
         return [];
       }
       const rows = parse<Array<{ app: PluginApp; score: number }>>(pkg, "popularApps", await MatonOS.sourcePopularApps(pkg, limit));
@@ -98,7 +103,7 @@ export async function pluginSources(): Promise<Source[]> {
     try {
       const info = sourceInfo(plugin.package, await MatonOS.sourceInfo(plugin.package));
       if (info.version !== CONTRACT_VERSION) throw new Error(`speaks contract ${info.version}, store speaks ${CONTRACT_VERSION}`);
-      return pluginSource(plugin, info.capabilities, info.label, info.revision);
+      return pluginSource(plugin, info.capabilities, info.label, info.revision, info.version);
     } catch (error) { console.error(`Store source ${plugin.package} unusable`, error); return null; }
   }));
   return checked.filter((source): source is Source => source !== null);

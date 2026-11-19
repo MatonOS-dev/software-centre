@@ -230,7 +230,8 @@ public final class SourcePlugins {
   public boolean running(String pkg, String operationId) throws Exception {
     try {
       ISoftwareSource plugin = source(pkg);
-      if (plugin.info().revision < 1) return true;
+      org.matonos.store.source.types.SourceInfo info = plugin.info();
+      if (info.version <= 2 && info.revision < 1) return true;
       return plugin.running(operationId);
     } catch (Exception error) {
       if (error instanceof RemoteException) throw remoteFailure(pkg, error);
