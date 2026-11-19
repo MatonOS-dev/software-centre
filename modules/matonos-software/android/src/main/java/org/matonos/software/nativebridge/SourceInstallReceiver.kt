@@ -1,4 +1,4 @@
-package org.matonos.flathub.nativebridge
+package org.matonos.software.nativebridge
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -28,8 +28,8 @@ class SourceInstallReceiver : BroadcastReceiver() {
   }
 
   companion object {
-    const val EXTRA_OPERATION_ID = "org.matonos.flathub.OPERATION_ID"
-    const val EXTRA_SOURCE = "org.matonos.flathub.OPERATION_SOURCE"
-    const val EXTRA_KIND = "org.matonos.flathub.OPERATION_KIND"
+    const val EXTRA_OPERATION_ID = "org.matonos.software.OPERATION_ID"
+    const val EXTRA_SOURCE = "org.matonos.software.OPERATION_SOURCE"
+    const val EXTRA_KIND = "org.matonos.software.OPERATION_KIND"
   }
 }

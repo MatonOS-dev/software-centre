@@ -4,10 +4,10 @@ import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgress
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { clickable, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import type { StoreApp } from "./sources/Source";
-import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
+import { MatonOS } from "../modules/matonos-software/src/MatonOS";
 import { runApp } from "./FlatpakBridge";
 import { useSources, setPluginEnabled } from "./hooks/useStore";
-import type { SourcePlugin } from "../modules/matonos-flathub/src/MatonOS";
+import type { SourcePlugin } from "../modules/matonos-software/src/MatonOS";
 import type { SourceProgress } from "./sources/Source";
 import { sourceInfo } from "./sources/PluginSource";
 
@@ -198,6 +198,7 @@ export default function App() {
   const [searchErrors, setSearchErrors] = useState<Array<{ source: string; message: string }>>([]);
   const [operations, setOperations] = useState<Record<string, Operation>>({});
   const requestId = useRef(0);
+  const initialInstalledRefresh = useRef(false);
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
   const updateIds = useMemo(() => new Set(updateApps.map((app) => `${app.source}:${app.id}`)), [updateApps]);
   const updateOperation = (ref: string, change: Operation | null) => setOperations((current) => {
@@ -273,23 +274,35 @@ export default function App() {
 
   async function loadCollection(nextFeed: Feed) {
     const request = ++requestId.current;
-    setLoading(true); setMessage("");
-    try {
-      const results = await Promise.allSettled(sources.map((source) => sourceCollection(source, nextFeed)));
-      const lists: StoreApp[][] = [];
-      const errors: Array<{ source: string; message: string }> = [];
-      results.forEach((result, index) => {
-        if (result.status === "fulfilled") lists.push(result.value);
-        else {
-          const source = sources[index];
-          console.error(`${source.name}: ${nextFeed} collection failed`, result.reason);
-          errors.push({ source: source.label ?? source.name, message: errorText(result.reason) });
-        }
-      });
-      if (request === requestId.current) { setApps(interleave(lists)); setSearchErrors(errors); }
+    setMessage(""); setSearchErrors([]); setLoading(true);
+    const cacheKey = nextFeed;
+    let cacheDisplayed = false;
+    const cacheRead = MatonOS.getBrowseCache(cacheKey).then((cached) => {
+      if (!cached || request !== requestId.current || results.some(Boolean)) return;
+      const rows = JSON.parse(cached) as StoreApp[];
+      cacheDisplayed = true;
+      setApps(rows);
+      setLoading(false);
+    }).catch((error) => console.warn(`Reading ${nextFeed} browse cache failed`, error));
+    const results: StoreApp[][] = [];
+    const publish = () => {
+      if (request !== requestId.current) return;
+      const rows = interleave(results).slice(0, 250);
+      setApps(rows); setLoading(false);
+      void MatonOS.setBrowseCache(cacheKey, JSON.stringify(rows)).catch((error) => console.warn(`Writing ${nextFeed} browse cache failed`, error));
+    };
+    const tasks = sources.map((source, index) => sourceCollection(source, nextFeed).then((rows) => {
+      results[index] = rows;
+      publish();
+    }).catch((error) => {
+      console.error(`${source.name}: ${nextFeed} collection failed`, error);
+      if (request === requestId.current) setSearchErrors((current) => [...current, { source: source.label ?? source.name, message: errorText(error) }]);
+    }));
+    await Promise.allSettled([cacheRead, ...tasks]);
+    if (request === requestId.current && !results.some(Boolean)) {
+      if (!cacheDisplayed) setApps([]);
+      setLoading(false);
     }
-    catch (error) { if (request === requestId.current) setMessage(errorText(error)); }
-    finally { if (request === requestId.current) setLoading(false); }
   }
 
   async function runSearch(value: string) {
@@ -358,13 +371,17 @@ export default function App() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => { void refreshInstalled(); void refreshUpdates(); void refreshRepositories(); }, 0);
+    const timer = setTimeout(() => { void refreshRepositories(); }, 0);
     const initialLink = Linking.getInitialURL().then((url) => { if (url) void handleRepositoryLink(url); });
     const subscription = Linking.addEventListener("url", (event) => void handleRepositoryLink(event.url));
     return () => { clearTimeout(timer); subscription.remove(); void initialLink; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial collection and links; registry changes refresh app lists below
   }, [handleRepositoryLink]);
   useEffect(() => {
+    if (sources.length > 0 && !initialInstalledRefresh.current) {
+      initialInstalledRefresh.current = true;
+      void refreshInstalled();
+    }
     const timer = setTimeout(() => { void loadCollection(feed); }, 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- collection loader is keyed by source registry and feed

@@ -1,4 +1,4 @@
-package org.matonos.flathub.sources;
+package org.matonos.software.sources;
 
 import android.app.Service;
 import android.content.Intent;

@@ -10,7 +10,7 @@
   <!-- Lets the store find generated Flatpak stubs' "install me" activities. -->
   <queries>
     <package android:name="org.matonos.linux" />
-    <package android:name="org.matonos.flathub" />
+    <package android:name="org.matonos.software" />
     <intent>
       <action android:name="org.matonos.store.SOURCE" />
     </intent>
@@ -23,9 +23,9 @@
     </intent>
   </queries>
   <application>
-    <service android:name="org.matonos.flathub.sources.StoreSourceService" android:exported="true">
+    <service android:name="org.matonos.software.sources.StoreSourceService" android:exported="true">
       <intent-filter><action android:name="org.matonos.store.STORE" /></intent-filter>
     </service>
-    <receiver android:name="org.matonos.flathub.nativebridge.SourceInstallReceiver" android:exported="false" />
+    <receiver android:name="org.matonos.software.nativebridge.SourceInstallReceiver" android:exported="false" />
   </application>
 </manifest>

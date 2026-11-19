@@ -1,4 +1,4 @@
-import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
+import { MatonOS } from "../modules/matonos-software/src/MatonOS";
 
 export type ProgressEvent = { source?: string; operationId?: string; line?: string; percent?: number; phase?: string; bytesDone?: number; bytesTotal?: number; result?: { ok?: boolean; error?: string; output?: string; operationId?: string } };
 

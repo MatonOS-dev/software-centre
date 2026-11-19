@@ -2,13 +2,13 @@ plugins {
   id 'com.android.library'
   id 'expo-module-gradle-plugin'
 }
-group = 'org.matonos.flathub.nativebridge'
+group = 'org.matonos.software.nativebridge'
 version = '0.1.0'
 android {
   buildFeatures { aidl true }
   // Contract: the store-source-contract submodule (contract/).
   sourceSets { main { aidl.srcDirs += ['../../../contract/aidl'] } }
-  namespace 'org.matonos.flathub.nativebridge'
+  namespace 'org.matonos.software.nativebridge'
   defaultConfig { minSdk 32; versionCode 1; versionName '0.1.0' }
 }
 dependencies {

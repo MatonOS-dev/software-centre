@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { pluginSources } from "../sources/PluginSource";
-import { MatonOS } from "../../modules/matonos-flathub/src/MatonOS";
+import { MatonOS } from "../../modules/matonos-software/src/MatonOS";
 import { toDetails, toListing, type AppDetails, type AppListing, type Review, type Source, type SourceName, type StoreApp } from "../sources/Source";
 
 export type * from "../sources/Source";

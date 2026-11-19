@@ -11,6 +11,8 @@ type NativeApi = {
   startStubUpdate(ref: string, operationId: string | null): Promise<boolean>;
   launchStub(appId: string): Promise<boolean>;
   sourcePlugins(): Promise<SourcePlugin[]>;
+  getBrowseCache(key: string): Promise<string | null>;
+  setBrowseCache(key: string, value: string): Promise<void>;
   sourceUnavailableOwners(): Promise<string>;
   setSourceEnabled(pkg: string, enabled: boolean): Promise<void>;
   sourceInfo(pkg: string): Promise<string>;
@@ -42,6 +44,8 @@ export const MatonOS = {
   storeListInstalled: () => Native.storeListInstalled(),
   storeListRemotes: () => Native.storeListRemotes(),
   sourcePlugins: () => Native.sourcePlugins(),
+  getBrowseCache: (key: string) => Native.getBrowseCache(key),
+  setBrowseCache: (key: string, value: string) => Native.setBrowseCache(key, value),
   sourceUnavailableOwners: () => Native.sourceUnavailableOwners(),
   setSourceEnabled: (pkg: string, enabled: boolean) => Native.setSourceEnabled(pkg, enabled),
   sourceInfo: (pkg: string) => Native.sourceInfo(pkg),

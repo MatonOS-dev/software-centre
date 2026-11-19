@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { withAndroidManifest, withAppBuildGradle, withDangerousMod, withGradleProperties } = require("@expo/config-plugins");
 
-module.exports = function withMatonFlathub(config) {
+module.exports = function withMatonSoftware(config) {
   config = withGradleProperties(config, (mod) => {
     const entry = mod.modResults.find((item) => item.type === "property" && item.key === "reactNativeArchitectures");
     if (entry) entry.value = "x86_64";
@@ -36,7 +36,7 @@ module.exports = function withMatonFlathub(config) {
     return mod;
   }]);
   return withAppBuildGradle(config, (mod) => {
-    const marker = "// MatonOS Flathub signing and x86_64-only native payload";
+    const marker = "// MatonOS Software Center signing and x86_64-only native payload";
     if (!mod.modResults.contents.includes(marker)) {
       mod.modResults.contents += `\n${marker}\nandroid {\n  defaultConfig { minSdkVersion 32; ndk { abiFilters \"x86_64\" } }\n  signingConfigs { matonos { storeFile file(System.getenv(\"MATON_SIGNING_STORE_FILE\")); storePassword System.getenv(\"MATON_SIGNING_STORE_PASSWORD\"); keyAlias System.getenv(\"MATON_SIGNING_KEY_ALIAS\"); keyPassword System.getenv(\"MATON_SIGNING_KEY_PASSWORD\") } }\n  buildTypes { debug { signingConfig signingConfigs.matonos }; release { signingConfig signingConfigs.matonos } }\n}\n`;
     }

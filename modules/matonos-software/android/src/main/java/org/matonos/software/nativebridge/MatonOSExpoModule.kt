@@ -1,11 +1,11 @@
-package org.matonos.flathub.nativebridge
+package org.matonos.software.nativebridge
 
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.matonos.linux.ILinuxAppStore
 import org.matonos.linux.ILinuxAppStoreCallback
-import org.matonos.flathub.sources.SourcePlugins
+import org.matonos.software.sources.SourcePlugins
 import java.util.concurrent.ConcurrentHashMap
 
 class MatonOSExpoModule : Module() {
@@ -45,6 +45,12 @@ class MatonOSExpoModule : Module() {
     }
     // Store source plugins (SOURCE-PLUGINS.md). Calls return the plugin's JSON as-is.
     AsyncFunction("sourcePlugins") { requirePlugins().list() }
+    AsyncFunction("getBrowseCache") { key: String ->
+      requireNotNull(appContext.reactContext).getSharedPreferences("software-centre", android.content.Context.MODE_PRIVATE).getString("browse:$key", null)
+    }
+    AsyncFunction("setBrowseCache") { key: String, value: String ->
+      requireNotNull(appContext.reactContext).getSharedPreferences("software-centre", android.content.Context.MODE_PRIVATE).edit().putString("browse:$key", value).apply()
+    }
     AsyncFunction("setSourceEnabled") { pkg: String, enabled: Boolean -> requirePlugins().setEnabled(pkg, enabled) }
     AsyncFunction("sourceInfo") { pkg: String -> json.toJson(sourceCall(pkg) { it.info() }) }
     AsyncFunction("sourceUnavailableOwners") { json.toJson(requirePlugins().unavailableOwners()) }

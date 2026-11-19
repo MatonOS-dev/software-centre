@@ -1,4 +1,4 @@
-import { MatonOS, type SourcePlugin } from "../../modules/matonos-flathub/src/MatonOS";
+import { MatonOS, type SourcePlugin } from "../../modules/matonos-software/src/MatonOS";
 import type { Review, Source, SourceProgress, StoreApp } from "./Source";
 
 const CONTRACT_VERSION = 2;
