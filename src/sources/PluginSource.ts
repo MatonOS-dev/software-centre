@@ -3,7 +3,7 @@ import type { Review, ScoredApp, Source, SourceProgress, StoreApp } from "./Sour
 
 const CONTRACT_VERSION = 3;
 const POPULAR_REVISION = 3;
-const CAPABILITIES = ["HAS_REPOSITORIES", "HAS_AGE_RATINGS", "HAS_REVIEWS", "HAS_ANTI_FEATURES", "HAS_PERMISSIONS", "", "REQUIRES_SETUP"];
+const CAPABILITIES = ["", "HAS_AGE_RATINGS", "HAS_REVIEWS", "HAS_ANTI_FEATURES", "HAS_PERMISSIONS", "", "REQUIRES_SETUP"];
 const PAGE = 100;
 export type SourceInfo = { version: number; revision: number; name: string; label: string; description?: string; capabilities: string[] };
 export function sourceInfo(plugin: string, json: string): SourceInfo {
