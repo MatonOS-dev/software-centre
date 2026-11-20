@@ -271,8 +271,9 @@ export default function App() {
   searchDispatch.current = executeSearch;
 
   function runSearch(value: string) {
+    // The text field owns searchNative; writing it back from JS lands
+    // asynchronously and wipes characters typed since this callback fired.
     setSearchText(value);
-    searchNative.set(value);
     const query = value.trim();
     if (!query) {
       const changed = searchController.current?.schedule("") ?? false;
