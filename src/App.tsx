@@ -301,12 +301,14 @@ export default function App() {
   }
 
   async function openDetails(app: StoreApp) {
-    setSelected(app); setMessage(""); setDetailError("");
+    const preferred = app.repoOptions?.find((option) => option.installable);
+    const detailApp = preferred ? { ...app, repo: preferred.repoId } : app;
+    setSelected(detailApp); setMessage(""); setDetailError("");
     try {
       const source = sources.find((candidate) => candidate.name === app.source);
       if (!source) throw new Error("This app's source is no longer enabled.");
-      const [rated] = await attachRatings([await source.details(app)]);
-      setSelected(rated);
+      const [rated] = await attachRatings([await source.details(detailApp)]);
+      setSelected({ ...rated, repo: detailApp.repo });
     } catch (error) { setDetailError(errorText(error)); }
   }
 
@@ -471,6 +473,7 @@ export default function App() {
   } else if (selected) {
     const currentOperation = operations[selected.ref];
     const currentBusyLabel = currentOperation ? busyButtonLabel(currentOperation.kind) : "";
+    const appBar = <AppTileRow item={selected} installedIds={installedIds} updateIds={updateIds} operations={operations} operationErrors={operationErrors} onOpenDetails={openDetails} onInstall={startInstall} onLaunch={launchApp} />;
     content = <DetailScreen app={selected} installed={installedIds.has(`${selected.source}:${selected.id}`)} updateAvailable={updateIds.has(`${selected.source}:${selected.id}`)} busy={Boolean(currentOperation)}
       busyLabel={currentBusyLabel} progress={currentOperation?.progress ?? ""} percent={currentOperation?.percent ?? null}
       canCancel={Boolean(sources.find((source) => source.name === selected.source)?.cancel)} error={operationErrors[selected.ref] ?? detailError}
@@ -478,7 +481,7 @@ export default function App() {
       onSignIn={() => getMyReview(selected)}
       onSubmitReview={(stars,title,body) => writeReview(selected,{stars,title,body})}
       onDeleteReview={() => removeReview(selected)}
-      onCancel={() => void cancelOperation(selected.ref)} onBack={() => setSelected(null)} onInstall={() => void startInstall(selected)} onRemove={() => void startUninstall(selected)} onOpen={() => void launchApp(selected)} onChooseRepository={(repoId) => void chooseRepository(repoId)} />;
+      onCancel={() => void cancelOperation(selected.ref)} onBack={() => setSelected(null)} onInstall={() => void startInstall(selected)} onRemove={() => void startUninstall(selected)} onOpen={() => void launchApp(selected)} onChooseRepository={(repoId) => void chooseRepository(repoId)} appBar={appBar} />;
   } else if (page === "sources") {
     content = <SourcesScreen rows={sourceRows} />;
   } else if (page === "installed" || page === "updates") {

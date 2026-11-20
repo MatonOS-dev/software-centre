@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Linking, ScrollView } from "react-native";
 import { EnrichedMarkdownText } from "react-native-enriched-markdown";
 import { FlatList, View } from "react-native";
 import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, LinearProgressIndicator, OutlinedTextField, Row, SegmentedButton, SingleChoiceSegmentedButtonRow, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
-import { height, padding, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
+import { height, padding, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import type { StoreApp } from "../sources/Source";
-import { MaterialSymbol } from "../components/MaterialSymbol";
 import { PermissionList } from "../components/PermissionList";
 import { Show } from "../components/Show";
 import { RatingStars, StarRow } from "./RatingStars";
@@ -35,11 +34,6 @@ function repositoryOptionLabel(option: NonNullable<StoreApp["repoOptions"]>[numb
   return label;
 }
 
-function DetailAppIcon({ app }: { app: StoreApp }) {
-  if (app.icon) return <ComposeImage source={{ uri: app.icon }} contentDescription={`${app.name} icon`} modifiers={[size(96, 96)]} />;
-  return <MaterialSymbol name="apps" size={72} />;
-}
-
 function RemoveButton({ installed, busy, onRemove }: { installed: boolean; busy: boolean; onRemove: () => void }) {
   if (!installed) return null;
   return <Button enabled={!busy} onClick={onRemove}><Text>Remove</Text></Button>;
@@ -54,7 +48,7 @@ function RepositoryMenu({ options, selectedRepository, expanded, setExpanded, on
     <DropdownMenuItem.Text>{repositoryOptionLabel(option, selectedRepository?.repoId)}</DropdownMenuItem.Text>
   </DropdownMenuItem>);
   return <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
-    <DropdownMenu.Trigger><Button onClick={() => setExpanded(true)}><Text>{`${selectedRepository?.name ?? "Choose repository"} ▾`}</Text></Button></DropdownMenu.Trigger>
+    <DropdownMenu.Trigger><Button onClick={() => setExpanded(true)}><Text>▾</Text></Button></DropdownMenu.Trigger>
     <DropdownMenu.Items>{items}</DropdownMenu.Items>
   </DropdownMenu>;
 }
@@ -171,12 +165,13 @@ function DetailFacts({ app }: { app: StoreApp }) {
 }
 
 export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, error, onRate,
-  onSignIn, onSubmitReview, onDeleteReview, onBack, onInstall, onRemove, onOpen, onCancel, onChooseRepository }: {
+  onSignIn, onSubmitReview, onDeleteReview, onBack, onInstall, onRemove, onOpen, onCancel, onChooseRepository, appBar }: {
   app: StoreApp; installed: boolean; updateAvailable: boolean; busy: boolean; busyLabel: string;
   progress: string; percent: number | null; canCancel: boolean; error: string; onRate: (stars: number) => Promise<void>;
   onSignIn: () => Promise<OwnedReview | null>;
   onSubmitReview: (stars:number,title:string,body:string) => Promise<void>; onDeleteReview: () => Promise<void>;
   onBack: () => void; onInstall: () => void; onRemove: () => void; onOpen: () => void; onCancel: () => void; onChooseRepository: (repoId: string) => void;
+  appBar: ReactNode;
 }) {
   const colors = useMaterialColors();
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -249,7 +244,7 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
   const action = actionHandler(updateAvailable, installed, onInstall, onOpen);
   const actionNeedsRepository = updateAvailable || !installed;
   const repoOptions = app.repoOptions ?? [];
-  const selectedRepository = repoOptions.find((option) => option.repoId === app.repo);
+  const selectedRepository = repoOptions.find((option) => option.repoId === app.repo) ?? repoOptions.find((option) => option.installable);
   const actionEnabled = !busy && (!actionNeedsRepository || (selectedRepository?.installable ?? true));
   const markdown = app.descriptionMarkdown ?? app.description ?? app.summary;
   const openLink = (event: { url: string }) => {
@@ -258,21 +253,15 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
   };
   return <ScrollView onScroll={(event) => { const {contentOffset,contentSize,layoutMeasurement}=event.nativeEvent; if (tab === "reviews" && contentOffset.y+layoutMeasurement.height>=contentSize.height-240) void loadMoreReviews(); }} scrollEventThrottle={400} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 14 }}>
     <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><Column verticalArrangement={{ spacedBy: 14 }}>
-    <Button onClick={onBack}><Text>‹  Back</Text></Button>
-    <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 18 }}>
-      <DetailAppIcon app={app} />
-      <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: 4 }}>
-        <Text style={{ typography: "headlineMedium" }}>{app.name}</Text>
-        <Text style={{ typography: "bodyMedium" }}>{app.summary}</Text>
-        <Text style={{ typography: "bodySmall" }}>{app.developer}</Text>
-        <Text style={{ typography: "labelSmall" }}>{app.sourceLabel ?? app.source}</Text>
-      </Column>
-    </Row>
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }}>
-      <Button enabled={actionEnabled} onClick={action}><Text>{actionLabel}</Text></Button>
+      <Button onClick={onBack}><Text>‹  Back</Text></Button>
+      <Button enabled={actionEnabled} onClick={action}><Text>{actionNeedsRepository ? `Install from ${selectedRepository?.name ?? "repository"}` : actionLabel}</Text></Button>
       <RemoveButton installed={installed} busy={busy} onRemove={onRemove} />
       <RepositoryMenu options={repoOptions} selectedRepository={selectedRepository} expanded={sourceMenuOpen} setExpanded={setSourceMenuOpen} onChoose={onChooseRepository} />
     </Row>
+    <View style={{ height: 1, backgroundColor: colors.outlineVariant }} />
+    {appBar}
+    <View style={{ height: 1, backgroundColor: colors.outlineVariant }} />
     {selectedRepositoryNote(selectedRepository?.note)}
     {progressPanel(progress, percent, busy, canCancel, onCancel)}
     <Show when={Boolean(error)}><Text style={{ typography: "bodyMedium" }} color="#b3261e">{error}</Text></Show>
