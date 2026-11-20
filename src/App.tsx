@@ -53,7 +53,8 @@ function AppTileContent({ item, installedIds, updateIds, operations, operationEr
   const operation = operations[item.ref];
   const busyLabel = operation ? busyButtonLabel(operation.kind) : "";
   const install = (app: StoreApp) => {
-    const option = app.repoOptions?.find((entry) => entry.installable);
+    // The detail page's source picker sets app.repo; lists fall back to the first installable source.
+    const option = app.repoOptions?.find((entry) => entry.repoId === app.repo && entry.installable) ?? app.repoOptions?.find((entry) => entry.installable);
     void onInstall(option ? { ...app, repo: option.repoId } : app);
   };
   return <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(operation)}
@@ -465,16 +466,15 @@ export default function App() {
     content = <SourceSettingsScreen source={settingsSource} label={settingPlugin?.label ?? "Source"} onBack={() => setSettingsOpen(false)} onChanged={() => void runSearch(searchText)} />;
   } else if (selected) {
     const currentOperation = operations[selected.ref];
-    const currentBusyLabel = currentOperation ? busyButtonLabel(currentOperation.kind) : "";
     const appBar = <AppTileContent item={selected} installedIds={installedIds} updateIds={updateIds} operations={operations} operationErrors={operationErrors} onOpenDetails={openDetails} onInstall={startInstall} onLaunch={launchApp} />;
-    content = <DetailScreen app={selected} installed={installedIds.has(`${selected.source}:${selected.id}`)} updateAvailable={updateIds.has(`${selected.source}:${selected.id}`)} busy={Boolean(currentOperation)}
-      busyLabel={currentBusyLabel} progress={currentOperation?.progress ?? ""} percent={currentOperation?.percent ?? null}
+    content = <DetailScreen app={selected} installed={installedIds.has(`${selected.source}:${selected.id}`)} busy={Boolean(currentOperation)}
+      progress={currentOperation?.progress ?? ""} percent={currentOperation?.percent ?? null}
       canCancel={Boolean(sources.find((source) => source.name === selected.source)?.cancel)} error={operationErrors[selected.ref] ?? detailError}
       onRate={(stars) => submitRating(selected, stars)}
       onSignIn={() => getMyReview(selected)}
       onSubmitReview={(stars,title,body) => writeReview(selected,{stars,title,body})}
       onDeleteReview={() => removeReview(selected)}
-      onCancel={() => void cancelOperation(selected.ref)} onBack={() => setSelected(null)} onInstall={() => void startInstall(selected)} onRemove={() => void startUninstall(selected)} onOpen={() => void launchApp(selected)} onChooseRepository={(repoId) => void chooseRepository(repoId)} appBar={appBar} />;
+      onCancel={() => void cancelOperation(selected.ref)} onBack={() => setSelected(null)} onRemove={() => void startUninstall(selected)} onChooseRepository={(repoId) => void chooseRepository(repoId)} appBar={appBar} />;
   } else if (page === "sources") {
     content = <SourcesScreen rows={sourceRows} />;
   } else if (page === "installed" || page === "updates") {

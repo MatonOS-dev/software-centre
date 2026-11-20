@@ -39,16 +39,19 @@ function RemoveButton({ installed, busy, onRemove }: { installed: boolean; busy:
   return <Button enabled={!busy} onClick={onRemove}><Text>Remove</Text></Button>;
 }
 
-function RepositoryMenu({ options, selectedRepository, expanded, setExpanded, onChoose }: {
+// Install itself is the app bar's button; this only picks where it installs from.
+function SourcePicker({ options, selectedRepository, expanded, setExpanded, onChoose }: {
   options: NonNullable<StoreApp["repoOptions"]>; selectedRepository: NonNullable<StoreApp["repoOptions"]>[number] | undefined;
   expanded: boolean; setExpanded: (value: boolean) => void; onChoose: (repoId: string) => void;
 }) {
-  if (options.length <= 1) return null;
+  if (!selectedRepository) return null;
+  const label = `Source: ${selectedRepository.name}`;
+  if (options.length <= 1) return <Text style={{ typography: "labelLarge" }}>{label}</Text>;
   const items = options.map((option) => <DropdownMenuItem key={option.repoId} onClick={() => { setExpanded(false); onChoose(option.repoId); }}>
-    <DropdownMenuItem.Text>{repositoryOptionLabel(option, selectedRepository?.repoId)}</DropdownMenuItem.Text>
+    <DropdownMenuItem.Text>{repositoryOptionLabel(option, selectedRepository.repoId)}</DropdownMenuItem.Text>
   </DropdownMenuItem>);
   return <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
-    <DropdownMenu.Trigger><Button onClick={() => setExpanded(true)}><Text>▾</Text></Button></DropdownMenu.Trigger>
+    <DropdownMenu.Trigger><Button onClick={() => setExpanded(true)}><Text>{`${label}  ▾`}</Text></Button></DropdownMenu.Trigger>
     <DropdownMenu.Items>{items}</DropdownMenu.Items>
   </DropdownMenu>;
 }
@@ -115,18 +118,6 @@ function tabDetails(app: StoreApp, markdown: string, colors: ReturnType<typeof u
   </Column>;
 }
 
-function actionButtonLabel(busy: boolean, busyLabel: string, updateAvailable: boolean, installed: boolean): string {
-  if (busy) return busyLabel;
-  if (updateAvailable) return "Update";
-  if (installed) return "Open";
-  return "Install";
-}
-
-function actionHandler(updateAvailable: boolean, installed: boolean, onInstall: () => void, onOpen: () => void): () => void {
-  if (updateAvailable || !installed) return onInstall;
-  return onOpen;
-}
-
 function ScreenshotStrip({ app, width }: { app: StoreApp; width: number }) {
   if (app.screenshots.length === 0) return null;
   const screenshots = app.screenshots.map((src, index) => screenshotItem(app, src, index));
@@ -165,13 +156,13 @@ function DetailFacts({ app }: { app: StoreApp }) {
   return <Column>{elements}</Column>;
 }
 
-export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, error, onRate,
-  onSignIn, onSubmitReview, onDeleteReview, onBack, onInstall, onRemove, onOpen, onCancel, onChooseRepository, appBar }: {
-  app: StoreApp; installed: boolean; updateAvailable: boolean; busy: boolean; busyLabel: string;
+export function DetailScreen({ app, installed, busy, progress, percent, canCancel, error, onRate,
+  onSignIn, onSubmitReview, onDeleteReview, onBack, onRemove, onCancel, onChooseRepository, appBar }: {
+  app: StoreApp; installed: boolean; busy: boolean;
   progress: string; percent: number | null; canCancel: boolean; error: string; onRate: (stars: number) => Promise<void>;
   onSignIn: () => Promise<OwnedReview | null>;
   onSubmitReview: (stars:number,title:string,body:string) => Promise<void>; onDeleteReview: () => Promise<void>;
-  onBack: () => void; onInstall: () => void; onRemove: () => void; onOpen: () => void; onCancel: () => void; onChooseRepository: (repoId: string) => void;
+  onBack: () => void; onRemove: () => void; onCancel: () => void; onChooseRepository: (repoId: string) => void;
   appBar: ReactNode;
 }) {
   const colors = useMaterialColors();
@@ -243,12 +234,8 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
   // RN views hosted in Compose need an explicit width: the page width minus its horizontal padding.
   const [contentWidth, setContentWidth] = useState(0);
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
-  const actionLabel = actionButtonLabel(busy, busyLabel, updateAvailable, installed);
-  const action = actionHandler(updateAvailable, installed, onInstall, onOpen);
-  const actionNeedsRepository = updateAvailable || !installed;
   const repoOptions = app.repoOptions ?? [];
   const selectedRepository = repoOptions.find((option) => option.repoId === app.repo) ?? repoOptions.find((option) => option.installable);
-  const actionEnabled = !busy && (!actionNeedsRepository || (selectedRepository?.installable ?? true));
   const markdown = app.descriptionMarkdown ?? app.description ?? app.summary;
   const openLink = (event: { url: string }) => {
     try { const url = new URL(event.url); if (url.protocol === "http:" || url.protocol === "https:") void Linking.openURL(url.toString()); }
@@ -259,9 +246,8 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }} modifiers={[fillMaxWidth()]}>
       <Button onClick={onBack}><Text>‹  Back</Text></Button>
       <Spacer modifiers={[weight(1)]} />
-      <Button enabled={actionEnabled} onClick={action}><Text>{actionNeedsRepository ? `Install from ${selectedRepository?.name ?? "repository"}` : actionLabel}</Text></Button>
+      <SourcePicker options={repoOptions} selectedRepository={selectedRepository} expanded={sourceMenuOpen} setExpanded={setSourceMenuOpen} onChoose={onChooseRepository} />
       <RemoveButton installed={installed} busy={busy} onRemove={onRemove} />
-      <RepositoryMenu options={repoOptions} selectedRepository={selectedRepository} expanded={sourceMenuOpen} setExpanded={setSourceMenuOpen} onChoose={onChooseRepository} />
     </Row>
     <HorizontalDivider />
     {appBar}
