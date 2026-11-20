@@ -61,14 +61,19 @@ function selectedRepositoryNote(note: string | undefined) {
   return <Text style={{ typography: "bodySmall" }}>{note}</Text>;
 }
 
-function progressPanel(progress: string, percent: number | null, busy: boolean, canCancel: boolean, onCancel: () => void) {
+function progressPanel(progress: string, busy: boolean, canCancel: boolean, onCancel: () => void) {
   if (!progress) return null;
-  const ratio = percent === null ? null : Math.min(1, Math.max(0, percent / 100));
   return <Column verticalArrangement={{ spacedBy: 6 }}>
-    <LinearProgressIndicator progress={ratio} />
     <Text style={{ typography: "bodySmall" }}>{progress}</Text>
     <Show when={busy && canCancel}><Button onClick={onCancel}><Text>Cancel</Text></Button></Show>
   </Column>;
+}
+
+// The line under the app bar doubles as the progress bar while an operation runs.
+function appBarEdge(progress: string, percent: number | null) {
+  if (!progress) return <HorizontalDivider />;
+  const ratio = percent === null ? null : Math.min(1, Math.max(0, percent / 100));
+  return <LinearProgressIndicator progress={ratio} modifiers={[fillMaxWidth()]} />;
 }
 
 function TabBar({ tab, setTab }: { tab: Tab; setTab: (tab: Tab) => void }) {
@@ -251,9 +256,9 @@ export function DetailScreen({ app, installed, busy, progress, percent, canCance
     </Row>
     <HorizontalDivider />
     {appBar}
-    <HorizontalDivider />
+    {appBarEdge(progress, percent)}
     {selectedRepositoryNote(selectedRepository?.note)}
-    {progressPanel(progress, percent, busy, canCancel, onCancel)}
+    {progressPanel(progress, busy, canCancel, onCancel)}
     <Show when={Boolean(error)}><Text style={{ typography: "bodyMedium" }} color="#b3261e">{error}</Text></Show>
     <RatingStars app={app} installed={installed} onRate={onRate} />
     <TabBar tab={tab} setTab={setTab} />

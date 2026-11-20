@@ -1,21 +1,15 @@
-import { Button, Column, LinearProgressIndicator, Row, Text } from "@expo/ui/jetpack-compose";
+import { Button, Column, Row, Text } from "@expo/ui/jetpack-compose";
 import { clickable, padding, paddingAll, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import type { ReactNode } from "react";
 import type { StoreApp } from "../sources/Source";
 import { MaterialSymbol } from "./MaterialSymbol";
 import { AppIcon } from "./AppIcon";
-import { ProgressLine } from "./ProgressLine";
 import { Show } from "./Show";
 import { SourceBadge } from "./SourceBadge";
 
 export function busyButtonLabel(kind: "install" | "update" | "uninstall"): string {
   if (kind === "update") return "Updating…";
   return kind === "install" ? "Installing…" : "Working…";
-}
-
-function percentToRatio(percent: number | null): number | null {
-  if (percent == null) return null;
-  return Math.min(1, Math.max(0, percent / 100));
 }
 
 export function progressLabel(phase: string, percent: number | null, bytesDone: number, bytesTotal: number): string {
@@ -42,13 +36,14 @@ function tileButtonAction(app: StoreApp, updateAvailable: boolean, installed: bo
   return () => onLaunch(app);
 }
 
-function busyControl(isBusy: boolean, percent: number | null, busy: boolean, sourceUnavailable: boolean, buttonAction: () => void, buttonLabel: string): ReactNode {
-  if (isBusy) return <LinearProgressIndicator progress={percentToRatio(percent)} />;
+// Busy rows only say what is happening; progress details live on the detail page.
+function busyControl(isBusy: boolean, busy: boolean, sourceUnavailable: boolean, buttonAction: () => void, buttonLabel: string): ReactNode {
+  if (isBusy) return <Text style={{ typography: "labelLarge" }}>{buttonLabel}</Text>;
   const buttonEnabled = !busy && !sourceUnavailable;
   return <Button enabled={buttonEnabled} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>;
 }
 
-export function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, percent, error, onOpenDetails, onInstall, onLaunch }: {
+export function AppTile({ app, installed, updateAvailable, busy, busyLabel, error, onOpenDetails, onInstall, onLaunch }: {
   app: StoreApp;
   installed: boolean;
   updateAvailable: boolean;
@@ -66,7 +61,7 @@ export function AppTile({ app, installed, updateAvailable, busy, busyLabel, prog
   const buttonAction = tileButtonAction(app, updateAvailable, installed, onInstall, onLaunch);
   const badgeIcons = (app.badges ?? []).map((badge) => <MaterialSymbol key={badge.id} name={badge.icon || "verified"} description={badge.label} />);
   const modifiers = app.sourceUnavailable ? [] : [clickable(() => onOpenDetails(app))];
-  const control = busyControl(isBusy, percent, busy, Boolean(app.sourceUnavailable), buttonAction, buttonLabel);
+  const control = busyControl(isBusy, busy, Boolean(app.sourceUnavailable), buttonAction, buttonLabel);
   return (
     <Column modifiers={modifiers}>
       <Row verticalAlignment="center" modifiers={[paddingAll(12)]}>
@@ -84,7 +79,6 @@ export function AppTile({ app, installed, updateAvailable, busy, busyLabel, prog
         </Column>
         <Column modifiers={[width(112)]} verticalArrangement={{ spacedBy: 4 }}>
           {control}
-          <Show when={isBusy}><ProgressLine progress={progress} /></Show>
           <Show when={Boolean(error)}><Text style={{ typography: "bodySmall" }} color="#b3261e">{error}</Text></Show>
         </Column>
       </Row>

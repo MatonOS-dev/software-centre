@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { AppState, FlatList, ScrollView, View } from "react-native";
+import { AppState, FlatList, SectionList, View } from "react-native";
 import { Button, Host, OutlinedTextField, Row, Text, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, padding, paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
@@ -14,7 +14,7 @@ import type { SourceProgress } from "./sources/Source";
 import { sourceInfo } from "./sources/PluginSource";
 import { StorePage, StoreNavRail } from "./components/StoreNavRail";
 import { StoreSourceRow } from "./components/StoreSourceRow";
-import { AppGridSection } from "./components/AppGridSection";
+import { AppSectionHeader, type AppSection } from "./components/AppGridSection";
 import { AppTile, busyButtonLabel, progressLabel } from "./components/AppTile";
 import { DetailScreen } from "./screens/DetailScreen";
 import { SourceSettingsScreen } from "./screens/SourceSettingsScreen";
@@ -457,7 +457,6 @@ export default function App() {
   const renderApp = ({ item }: { item: StoreApp }) => (
       <AppTileRow item={item} installedIds={installedIds} updateIds={updateIds} operations={operations} operationErrors={operationErrors} onOpenDetails={openDetails} onInstall={startInstall} onLaunch={launchApp} />
   );
-  const renderAppRow = (app: StoreApp) => renderApp({ item: app });
   const keyApp = (app: StoreApp) => `${app.source}:${app.id}`;
 
   let content: ReactNode;
@@ -511,10 +510,12 @@ export default function App() {
       {searchErrorRows}
     </View>;
   } else {
-    content = <ScrollView style={{ flex: 1 }}>
-      <AppGridSection title="Popular" apps={popularApps} renderApp={renderAppRow} loading={collectionLoading.popular} error={collectionErrors.popular} />
-      <AppGridSection title="New" apps={newApps} renderApp={renderAppRow} loading={collectionLoading.new} error={collectionErrors.new} />
-    </ScrollView>;
+    const sections: AppSection[] = [
+      { title: "Popular", data: popularApps, loading: collectionLoading.popular, error: collectionErrors.popular },
+      { title: "New", data: newApps, loading: collectionLoading.new, error: collectionErrors.new },
+    ];
+    content = <SectionList style={{ flex: 1 }} sections={sections} renderItem={renderApp} keyExtractor={keyApp}
+      renderSectionHeader={({ section }) => <AppSectionHeader section={section} />} stickySectionHeadersEnabled={false} />;
   }
 
   // Search belongs to Explore only; detail, library and source pages have none.
