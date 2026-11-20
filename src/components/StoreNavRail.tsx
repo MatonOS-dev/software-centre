@@ -1,4 +1,4 @@
-import { Column, FilledTonalButton, Host, Row, Text, TextButton, useMaterialColors } from "@expo/ui/jetpack-compose";
+import { Column, Host, Row, Text, TextButton, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, paddingAll } from "@expo/ui/jetpack-compose/modifiers";
 import { MaterialSymbol } from "./MaterialSymbol";
 import type { ReactNode } from "react";
@@ -26,11 +26,10 @@ function NavItem({ item, selected, updateCount, onSelect }: { item: (typeof item
     <Text style={{ typography: "labelLarge" }} color={foreground}>{item.title}</Text>
     {updateCountBadge(item.page, updateCount, foreground)}
   </Row>;
-  const onClick = () => onSelect(item.page);
-  if (selected) {
-    return <FilledTonalButton onClick={onClick} colors={{ containerColor: colors.secondaryContainer, contentColor: colors.onSecondaryContainer }} modifiers={[fillMaxWidth()]}>{content}</FilledTonalButton>;
-  }
-  return <TextButton onClick={onClick} colors={{ contentColor: colors.onSurfaceVariant }} modifiers={[fillMaxWidth()]}>{content}</TextButton>;
+  // One button type for both states: FilledTonalButton pads its content wider than
+  // TextButton, so switching types shifted the label sideways on select.
+  const container = selected ? colors.secondaryContainer : "transparent";
+  return <TextButton onClick={() => onSelect(item.page)} colors={{ containerColor: container, contentColor: foreground }} modifiers={[fillMaxWidth()]}>{content}</TextButton>;
 }
 
 export function StoreNavRail({ page, updateCount, onSelect }: { page: StorePage; updateCount: number; onSelect: (page: StorePage) => void }) {

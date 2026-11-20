@@ -517,12 +517,14 @@ export default function App() {
     </ScrollView>;
   }
 
+  // Search belongs to Explore only; detail, library and source pages have none.
+  const showSearch = page === "browse" && !selected && !settingsOpen;
   return <View style={{ flex: 1, flexDirection: "row", backgroundColor: themeColors.background }}>
     <StoreNavRail page={page} updateCount={updateApps.length} onSelect={(next) => void selectPage(next)} />
     <View style={{ flex: 1 }}>
-      <Host matchContents={{ vertical: true }}><OutlinedTextField value={searchNative} singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 12, 16, 12)]}>
+      <Show when={showSearch}><Host matchContents={{ vertical: true }}><OutlinedTextField value={searchNative} singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 12, 16, 12)]}>
         <OutlinedTextField.Placeholder><Text modifiers={[fillMaxWidth()]}>Search apps</Text></OutlinedTextField.Placeholder>
-      </OutlinedTextField></Host>
+      </OutlinedTextField></Host></Show>
       {content}
     </View>
   </View>;

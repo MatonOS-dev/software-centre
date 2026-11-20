@@ -93,7 +93,11 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("sourceIcon") { pkg: String ->
       val context = requireNotNull(appContext.reactContext)
       try {
-        val drawable = context.packageManager.getApplicationIcon(pkg)
+        // The source service's own icon (falls back to the app icon), so a plugin
+        // hosted inside a larger app shows its catalogue rather than the host app.
+        val pm = context.packageManager
+        val service = pm.queryIntentServices(android.content.Intent(org.matonos.software.sources.SourcePlugins.ACTION).setPackage(pkg), 0).firstOrNull()
+        val drawable = service?.loadIcon(pm) ?: pm.getApplicationIcon(pkg)
         val bitmap = android.graphics.Bitmap.createBitmap(96, 96, android.graphics.Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(bitmap)
         drawable.setBounds(0, 0, canvas.width, canvas.height)
