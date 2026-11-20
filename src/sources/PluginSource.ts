@@ -1,5 +1,5 @@
 import { MatonOS, type SourcePlugin } from "../../modules/matonos-software/src/MatonOS";
-import type { Review, ScoredApp, Source, SourceProgress, StoreApp } from "./Source";
+import type { ScoredApp, Source, SourceProgress, StoreApp } from "./Source";
 
 const CONTRACT_VERSION = 4;
 const POPULAR_REVISION = 3;
@@ -88,12 +88,6 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
       const result = toApp(pkg, { ...listing, ...details, repo: app.repo ?? listing.repo, repoOptions }, label);
       return result;
     },
-    ...(capabilities.includes("HAS_REVIEWS") ? {
-      async reviews(app: StoreApp) {
-        return pages<Omit<Review, "date"> & { date: number }>((offset, limit) => MatonOS.sourceReviews(pkg, app.id, offset, limit), pkg, "reviews")
-          .then((reviews) => reviews.map((review) => ({ ...review, date: new Date(review.date) })));
-      },
-    } : {}),
     installed: () => list("installed", (offset, limit) => MatonOS.sourceInstalled(pkg, offset, limit)),
     updates: () => list("updates", (offset, limit) => MatonOS.sourceUpdates(pkg, offset, limit)),
     install: (app, operationId) => MatonOS.sourceInstall(pkg, app.id, app.repo ?? "1", operationId),

@@ -5,7 +5,7 @@ import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, padding, paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
 import type { ScoredApp, StoreApp } from "./sources/Source";
 import { mergeNew, mergePopular } from "./sources/Collections";
-import { attachRatings, submitRating } from "./sources/ratings";
+import { attachRatings, getMyReview, removeReview, submitRating, writeReview } from "./sources/ratings";
 import { DebouncedSearch, rankSearchResults } from "./sources/Search";
 import { MatonOS } from "../modules/matonos-software/src/MatonOS";
 import { useSources, setPluginEnabled } from "./hooks/useStore";
@@ -475,6 +475,9 @@ export default function App() {
       busyLabel={currentBusyLabel} progress={currentOperation?.progress ?? ""} percent={currentOperation?.percent ?? null}
       canCancel={Boolean(sources.find((source) => source.name === selected.source)?.cancel)} error={operationErrors[selected.ref] ?? detailError}
       onRate={(stars) => submitRating(selected, stars)}
+      onSignIn={() => getMyReview(selected)}
+      onSubmitReview={(stars,title,body) => writeReview(selected,{stars,title,body})}
+      onDeleteReview={() => removeReview(selected)}
       onCancel={() => void cancelOperation(selected.ref)} onBack={() => setSelected(null)} onInstall={() => void startInstall(selected)} onRemove={() => void startUninstall(selected)} onOpen={() => void launchApp(selected)} onChooseRepository={(repoId) => void chooseRepository(repoId)} />;
   } else if (page === "sources") {
     content = <SourcesScreen rows={sourceRows} />;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { appRatingKey, attachRatings, fetchRatings, RATINGS_API_BASE, submitRating } from "../src/sources/ratings.ts";
+import { appRatingKey, attachRatings, fetchRatings, API_BASE, submitRating } from "../src/sources/ratings.ts";
 
-assert.equal(RATINGS_API_BASE, "https://maton.hanro50.net.za/api");
+assert.equal(API_BASE, "https://maton.hanro50.net.za/api");
 assert.equal(appRatingKey({ id: "org.example.App/x86_64/stable", packageName: "org.example.App" }), "org.example.App");
 assert.equal(appRatingKey({ id: "org.example.App" }), "org.example.App");
 assert.equal(appRatingKey({ id: "app/org.example.App/x86_64/stable", packageName: "flatpak.app.org_example_App.x86_64.stable" }), "org.example.App");
@@ -19,9 +19,10 @@ try {
   assert.equal(rows[0].rating.average, 4.5);
   assert.equal(rows[0].rating.count, 2);
   assert.equal(calls.length, 1, "duplicate app keys are fetched once in one batch");
-  assert.match(calls[0].url, /\/ratings\?apps=org.example.App$/);
+  assert.match(calls[0].url, /\/reviews\/ratings\?apps=org.example.App$/);
   await submitRating({ id: "ref", packageName: "org.example.App" }, 5);
   assert.equal(calls[1].init.method, "POST");
+  assert.match(calls[1].url, /\/reviews\/ratings$/);
   assert.deepEqual(JSON.parse(calls[1].init.body), { app: "org.example.App", stars: 5 });
   const cached = await fetchRatings([{ id: "org.example.App" }]);
   assert.equal(cached.get("org.example.App").average, 4.5);

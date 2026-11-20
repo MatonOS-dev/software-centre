@@ -89,7 +89,6 @@ export type Review = {
   rating: number; // 1–5
   summary: string;
   description: string;
-  version: string;
   date: Date;
 };
 
@@ -108,8 +107,6 @@ export interface Source {
   install(app: StoreApp, operationId: string): Promise<void>;
   uninstall(app: StoreApp, operationId: string): Promise<void>;
   cancel?(operationId: string): Promise<void>;
-  /** Optional: sources without a reviews backend leave it out. */
-  reviews?(app: StoreApp): Promise<Review[]>;
   progress(listener: (event: SourceProgress) => void): { remove(): void };
 }
 

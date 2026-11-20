@@ -5,6 +5,8 @@ type NativeApi = {
   sourcePlugins(): Promise<SourcePlugin[]>;
   getBrowseCache(key: string): Promise<string | null>;
   setBrowseCache(key: string, value: string): Promise<void>;
+  accountSession(): Promise<{ token: string; machineId: string }>;
+  invalidateAccountSession(token: string): boolean;
   sourceUnavailableOwners(): Promise<string>;
   setSourceEnabled(pkg: string, enabled: boolean): Promise<void>;
   sourceInfo(pkg: string): Promise<string>;
@@ -35,6 +37,8 @@ export const MatonOS = {
   sourcePlugins: () => Native.sourcePlugins(),
   getBrowseCache: (key: string) => Native.getBrowseCache(key),
   setBrowseCache: (key: string, value: string) => Native.setBrowseCache(key, value),
+  accountSession: () => Native.accountSession(),
+  invalidateAccountSession: (token: string) => Native.invalidateAccountSession(token),
   sourceUnavailableOwners: () => Native.sourceUnavailableOwners(),
   setSourceEnabled: (pkg: string, enabled: boolean) => Native.setSourceEnabled(pkg, enabled),
   sourceInfo: (pkg: string) => Native.sourceInfo(pkg),

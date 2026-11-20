@@ -16,6 +16,15 @@ and wrapped by `PluginSource`, using the contract in
 the Sources controls can toggle them and refresh the session source registry.
 Only plugins advertising `HAS_REPOSITORIES` get repository management.
 
+Ratings use `/reviews/ratings`; reviews use `/reviews/apps/<app>` and are
+account backed through the system `org.matonos.account` AccountManager entry.
+Stars remain anonymous. The store asks AccountManager for its `session` token
+only after the user chooses “Sign in to write a review”; it does not persist
+passwords or tokens. The authenticator returns the machine id through its
+AccountManager token bundle; the store sends it as `X-Maton-Machine-Id`, which
+the server uses to bind a session to its device.
+Review text and summaries are store owned and identical across sources.
+
 F-Droid now lives in the separate Java app
 [`store-sources/fdroid`](../../store-sources/fdroid/README.md). It owns trusted
 repository preferences, authenticated indices, compatible version selection,

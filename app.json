@@ -9,7 +9,7 @@
     "android": {
       "package": "org.matonos.software",
       "versionCode": 1,
-      "permissions": ["INTERNET", "org.matonos.permission.SYSTEM_BRIDGE"]
+      "permissions": ["INTERNET", "GET_ACCOUNTS", "USE_CREDENTIALS", "org.matonos.permission.SYSTEM_BRIDGE"]
     },
     "plugins": ["./plugins/withMatonSoftware", "expo-router", "expo-splash-screen", "expo-status-bar"],
     "experiments": { "autolinkingModuleResolution": true },

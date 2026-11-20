@@ -10,7 +10,8 @@
     "check:release-linkage": "node scripts/check-release-linkage.mjs",
     "test:source-settings": "node --experimental-strip-types scripts/test-source-settings.mjs",
     "test:search": "node --experimental-strip-types scripts/test-search.mjs",
-    "test:ratings": "node --experimental-strip-types scripts/test-ratings.mjs"
+    "test:ratings": "node --experimental-strip-types scripts/test-ratings.mjs",
+    "test:review-form": "node --experimental-strip-types scripts/test-review-form-state.mjs"
   },
   "dependencies": {
     "@expo/ui": "57.0.20",

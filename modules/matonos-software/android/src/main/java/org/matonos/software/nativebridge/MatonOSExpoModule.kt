@@ -2,6 +2,7 @@ package org.matonos.software.nativebridge
 
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.Promise
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,6 +34,24 @@ class MatonOSExpoModule : Module() {
     }
     AsyncFunction("setBrowseCache") { key: String, value: String ->
       requireNotNull(appContext.reactContext).getSharedPreferences("software-centre", android.content.Context.MODE_PRIVATE).edit().putString("browse:$key", value).apply()
+    }
+    AsyncFunction("accountSession") { promise: Promise ->
+      val context = requireNotNull(appContext.reactContext)
+      val manager = android.accounts.AccountManager.get(context)
+      manager.getAuthTokenByFeatures("org.matonos.account", "session", null, appContext.currentActivity, null, android.os.Bundle(), { future ->
+        try {
+          val result = future.result
+          val token = result.getString(android.accounts.AccountManager.KEY_AUTHTOKEN)
+          if (token.isNullOrBlank()) throw IllegalStateException("MatonOS account did not return a session token")
+          val machineId = result.getString("org.matonos.account.machine_id")
+            ?: throw IllegalStateException("MatonOS account did not return the machine id")
+          promise.resolve(mapOf("token" to token, "machineId" to machineId))
+        } catch (error: Exception) { promise.reject("ACCOUNT_SESSION", error.message ?: "Account sign-in failed", error) }
+      }, android.os.Handler(android.os.Looper.getMainLooper()))
+    }
+    Function("invalidateAccountSession") { token: String ->
+      android.accounts.AccountManager.get(requireNotNull(appContext.reactContext)).invalidateAuthToken("org.matonos.account", token)
+      true
     }
     AsyncFunction("setSourceEnabled") { pkg: String, enabled: Boolean -> requirePlugins().setEnabled(pkg, enabled) }
     AsyncFunction("sourceInfo") { pkg: String -> json.toJson(sourceCall(pkg) { it.info() }) }.runOnQueue(sourceCallQueue)

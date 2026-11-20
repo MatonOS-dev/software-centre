@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { pluginSources } from "../sources/PluginSource";
 import { attachRatings } from "../sources/ratings";
 import { MatonOS } from "../../modules/matonos-software/src/MatonOS";
-import { toDetails, toListing, type AppDetails, type AppListing, type Review, type Source, type SourceName, type StoreApp } from "../sources/Source";
+import { toListing, type AppListing, type Source, type SourceName, type StoreApp } from "../sources/Source";
 
 export type * from "../sources/Source";
 
@@ -29,12 +29,6 @@ export function useSources(): Source[] {
   return sources;
 }
 const SEARCH_DEBOUNCE_MS = 300;
-
-function sourceFor(name: SourceName): Source {
-  const source = SOURCES.find((candidate) => candidate.name === name);
-  if (!source) throw new Error(`Unknown source ${name}.`);
-  return source;
-}
 
 // Installed ids per source, cached for the session and dropped whenever an
 // install/uninstall finishes so the next search sees the new state.
@@ -93,41 +87,4 @@ export function useAppSearch(term: string): SearchState {
   if (!query) return { apps: [], loading: false, errors: [] };
   // Keep the previous results on screen while the new search runs.
   return { apps: result.apps, loading: result.query !== query, errors: result.errors };
-}
-
-export type DetailsState = {
-  /** Full details once loaded; null while loading or without an app. */
-  app: AppDetails | null;
-  /** undefined: the source has no reviews backend. [] : supported but none. */
-  reviews: Review[] | undefined;
-  loading: boolean;
-  error: string | null;
-};
-
-/** Full details (description, screenshots, permissions, sizes) and reviews for one app. */
-export function useAppDetails(app: AppListing | null): DetailsState {
-  const key = app ? `${app.source}:${app.id}` : "";
-  const [result, setResult] = useState<{ key: string; app: AppDetails | null; reviews: Review[] | undefined; error: string | null }>({ key: "", app: null, reviews: undefined, error: null });
-
-  useEffect(() => {
-    if (!app) return;
-    let stale = false;
-    const source = sourceFor(app.source);
-    const reviews = source.reviews
-      ? source.reviews(app as StoreApp).catch((error) => { console.warn(`${source.name}: reviews for ${app.id} failed`, error); return [] as Review[]; })
-      : Promise.resolve(undefined);
-    Promise.all([source.details(app as StoreApp), reviews, installed()]).then(async ([details, list, ids]) => {
-      const [rated] = await attachRatings([details]);
-      if (!stale) setResult({ key, app: toDetails({ ...rated, installed: ids.has(key) }), reviews: list, error: null });
-    }).catch((error) => {
-      console.error(`${source.name}: details for ${app.id} failed`, error);
-      if (!stale) setResult({ key, app: null, reviews: undefined, error: String(error?.message ?? error) });
-    });
-    return () => { stale = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by source+id, not object identity
-  }, [key]);
-
-  if (!app) return { app: null, reviews: undefined, loading: false, error: null };
-  if (result.key !== key) return { app: null, reviews: undefined, loading: true, error: null };
-  return { app: result.app, reviews: result.reviews, loading: false, error: result.error };
 }

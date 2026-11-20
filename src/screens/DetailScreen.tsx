@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Linking, ScrollView } from "react-native";
 import { EnrichedMarkdownText } from "react-native-enriched-markdown";
 import { FlatList, View } from "react-native";
-import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, LinearProgressIndicator, Row, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
+import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, LinearProgressIndicator, OutlinedTextField, Row, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
 import { height, padding, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import type { StoreApp } from "../sources/Source";
 import { MaterialSymbol } from "../components/MaterialSymbol";
 import { PermissionList } from "../components/PermissionList";
 import { Show } from "../components/Show";
 import { RatingStars } from "./RatingStars";
+import { fetchReviews, type OwnedReview } from "../sources/ratings";
+import type { Review } from "../sources/Source";
+import { canSubmitReview, reviewErrorMessage } from "./reviewFormState";
 
 type Tab = "details" | "permissions";
 
@@ -126,12 +129,71 @@ function DetailFacts({ app }: { app: StoreApp }) {
 }
 
 export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, error, onRate,
-  onBack, onInstall, onRemove, onOpen, onCancel, onChooseRepository }: {
+  onSignIn, onSubmitReview, onDeleteReview, onBack, onInstall, onRemove, onOpen, onCancel, onChooseRepository }: {
   app: StoreApp; installed: boolean; updateAvailable: boolean; busy: boolean; busyLabel: string;
   progress: string; percent: number | null; canCancel: boolean; error: string; onRate: (stars: number) => Promise<void>;
+  onSignIn: () => Promise<OwnedReview | null>;
+  onSubmitReview: (stars:number,title:string,body:string) => Promise<void>; onDeleteReview: () => Promise<void>;
   onBack: () => void; onInstall: () => void; onRemove: () => void; onOpen: () => void; onCancel: () => void; onChooseRepository: (repoId: string) => void;
 }) {
   const colors = useMaterialColors();
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewError, setReviewError] = useState("");
+  const [myReview, setMyReview] = useState<OwnedReview | null>(null);
+  const [reviewAccountKey, setReviewAccountKey] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewStars, setReviewStars] = useState(5);
+  const titleNative = useNativeState("");
+  const bodyNative = useNativeState("");
+  const offset = useRef(0);
+  const loadingReviews = useRef(false);
+  const [hasMoreReviews, setHasMoreReviews] = useState(true);
+  useEffect(() => {
+    let active = true; offset.current = 0;
+    void fetchReviews(app, 0, 20).then((items) => { if (active) { setReviews(items); offset.current = items.length; setHasMoreReviews(items.length === 20); } })
+      .catch((cause) => { if (active) setReviewError(cause instanceof Error ? cause.message : "Reviews could not be loaded."); });
+    return () => { active = false; };
+  }, [app]);
+  async function loadMoreReviews() {
+    if (loadingReviews.current || !hasMoreReviews) return;
+    loadingReviews.current = true;
+    try { const items = await fetchReviews(app, offset.current, 20); setReviews((current) => [...current, ...items]); offset.current += items.length; setHasMoreReviews(items.length === 20); }
+    catch (cause) { setReviewError(cause instanceof Error ? cause.message : "More reviews could not be loaded."); }
+    finally { loadingReviews.current = false; }
+  }
+  async function sendReview() {
+    const draft = {stars:reviewStars,title:titleNative.value,body:bodyNative.value};
+    if (!canSubmitReview(draft)) { setReviewError("Add a title or review and check the length limits."); return; }
+    setReviewBusy(true); setReviewError("");
+    try { await onSubmitReview(draft.stars,draft.title,draft.body); setMyReview(draft); const next = await fetchReviews(app, 0, 20); setReviews(next); offset.current = next.length; }
+    catch (cause) { const value = cause as Error & { code?:string }; setReviewError(reviewErrorMessage(value.code,value.message)); }
+    finally { setReviewBusy(false); }
+  }
+  async function removeOwnReview() {
+    setReviewBusy(true); setReviewError("");
+    try { await onDeleteReview(); setMyReview(null); titleNative.set(""); bodyNative.set(""); setReviews(await fetchReviews(app,0,20)); }
+    catch (cause) { setReviewError(cause instanceof Error ? cause.message : "Review could not be deleted."); }
+    finally { setReviewBusy(false); }
+  }
+  async function signInForReview() {
+    setReviewBusy(true); setReviewError("");
+    try { const own = await onSignIn(); setMyReview(own); if (own) { setReviewStars(own.stars); titleNative.set(own.title); bodyNative.set(own.body); } setReviewAccountKey(app.ref); }
+    catch (cause) { setReviewError(cause instanceof Error ? cause.message : "Sign-in was not completed."); }
+    finally { setReviewBusy(false); }
+  }
+  const reviewCards = reviews.map((review) => <Host key={review.id} matchContents={{vertical:true}}><Column verticalArrangement={{spacedBy:4}} modifiers={[padding(12,8,12,8)]}>
+    <Text style={{typography:"titleSmall"}}>{`${"★".repeat(review.rating)}${"☆".repeat(5-review.rating)}  ${review.author}`}</Text>
+    {review.summary ? <Text style={{typography:"titleMedium"}}>{review.summary}</Text> : null}
+    <Text style={{typography:"bodyMedium"}}>{review.description}</Text>
+    <Text style={{typography:"bodySmall"}}>{review.date.toLocaleDateString()}</Text>
+  </Column></Host>);
+  const reviewStarButtons = [1,2,3,4,5].map((stars) => <Button key={stars} enabled={!reviewBusy} onClick={() => setReviewStars(stars)}><Text>{stars <= reviewStars ? "★" : "☆"}</Text></Button>);
+  const reviewEditor = reviewAccountKey === app.ref ? <Column verticalArrangement={{spacedBy:8}}>
+    <Row horizontalArrangement={{spacedBy:4}}>{reviewStarButtons}</Row>
+    <OutlinedTextField value={titleNative} singleLine onValueChange={(value) => titleNative.set(value)}><OutlinedTextField.Label>Title (optional)</OutlinedTextField.Label></OutlinedTextField>
+    <OutlinedTextField value={bodyNative} onValueChange={(value) => bodyNative.set(value)}><OutlinedTextField.Label>Your review</OutlinedTextField.Label></OutlinedTextField>
+    <Row horizontalArrangement={{spacedBy:8}}><Button enabled={!reviewBusy} onClick={() => void sendReview()}><Text>{reviewBusy ? "Sending…" : "Send"}</Text></Button><Show when={Boolean(myReview)}><Button enabled={!reviewBusy} onClick={() => void removeOwnReview()}><Text>Delete</Text></Button></Show></Row>
+  </Column> : <Button enabled={!reviewBusy} onClick={() => void signInForReview()}><Text>{reviewBusy ? "Opening account…" : "Sign in to write a review"}</Text></Button>;
   const [tab, setTab] = useState<Tab>("details");
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const actionLabel = actionButtonLabel(busy, busyLabel, updateAvailable, installed);
@@ -145,7 +207,7 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     try { const url = new URL(event.url); if (url.protocol === "http:" || url.protocol === "https:") void Linking.openURL(url.toString()); }
     catch (error) { console.error("Opening app description link failed", error); }
   };
-  return <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 14 }}>
+  return <ScrollView onScroll={(event) => { const {contentOffset,contentSize,layoutMeasurement}=event.nativeEvent; if (contentOffset.y+layoutMeasurement.height>=contentSize.height-240) void loadMoreReviews(); }} scrollEventThrottle={400} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 14 }}>
     <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><Column verticalArrangement={{ spacedBy: 14 }}>
     <Button onClick={onBack}><Text>‹  Back</Text></Button>
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 18 }}>
@@ -166,6 +228,15 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     {progressPanel(progress, percent, busy, canCancel, onCancel)}
     <Show when={Boolean(error)}><Text style={{ typography: "bodyMedium" }} color="#b3261e">{error}</Text></Show>
     <RatingStars app={app} installed={installed} onRate={onRate} />
+    <Host matchContents={{vertical:true}} style={{width:"100%"}}><Column verticalArrangement={{spacedBy:8}}>
+      <Text style={{typography:"titleLarge"}}>Write a review</Text>
+      {reviewEditor}
+      {reviewError ? <Text style={{typography:"bodySmall"}} color="#b3261e">{reviewError}</Text> : null}
+      <Text style={{typography:"titleLarge"}}>Reviews</Text>
+      {reviews.length === 0 && !reviewError ? <Text>No reviews yet</Text> : null}
+      {reviewCards}
+      {hasMoreReviews ? <Button onClick={() => void loadMoreReviews()}><Text>Load more</Text></Button> : null}
+    </Column></Host>
     <ScreenshotStrip app={app} />
     <Row horizontalArrangement={{ spacedBy: 8 }}>
       <Button onClick={() => setTab("details")}><Text>Details</Text></Button>
