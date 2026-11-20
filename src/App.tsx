@@ -44,20 +44,26 @@ function searchEmptyState(loading: boolean, errors: Array<{ source: string; mess
   return <Host style={{ width: "100%", height: 64 }}><Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text></Host>;
 }
 
-function AppTileRow({ item, installedIds, updateIds, operations, operationErrors, onOpenDetails, onInstall, onLaunch }: {
+type AppTileRowProps = {
   item: StoreApp; installedIds: Set<string>; updateIds: Set<string>; operations: Record<string, Operation>; operationErrors: Record<string, string>;
   onOpenDetails: (app: StoreApp) => void; onInstall: (app?: StoreApp | null) => Promise<void>; onLaunch: (app: StoreApp) => Promise<void>;
-}) {
+};
+// The tile without its own Host, for embedding inside another Compose tree (the detail page).
+function AppTileContent({ item, installedIds, updateIds, operations, operationErrors, onOpenDetails, onInstall, onLaunch }: AppTileRowProps) {
   const operation = operations[item.ref];
   const busyLabel = operation ? busyButtonLabel(operation.kind) : "";
   const install = (app: StoreApp) => {
     const option = app.repoOptions?.find((entry) => entry.installable);
     void onInstall(option ? { ...app, repo: option.repoId } : app);
   };
+  return <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(operation)}
+    busyLabel={busyLabel} progress={operation?.progress ?? ""} percent={operation?.percent ?? null} error={operationErrors[item.ref]}
+    onOpenDetails={onOpenDetails} onInstall={install} onLaunch={onLaunch} />;
+}
+
+function AppTileRow(props: AppTileRowProps) {
   return <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }}>
-    <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(operation)}
-      busyLabel={busyLabel} progress={operation?.progress ?? ""} percent={operation?.percent ?? null} error={operationErrors[item.ref]}
-      onOpenDetails={onOpenDetails} onInstall={install} onLaunch={onLaunch} />
+    <AppTileContent {...props} />
   </Host>;
 }
 
@@ -460,7 +466,7 @@ export default function App() {
   } else if (selected) {
     const currentOperation = operations[selected.ref];
     const currentBusyLabel = currentOperation ? busyButtonLabel(currentOperation.kind) : "";
-    const appBar = <AppTileRow item={selected} installedIds={installedIds} updateIds={updateIds} operations={operations} operationErrors={operationErrors} onOpenDetails={openDetails} onInstall={startInstall} onLaunch={launchApp} />;
+    const appBar = <AppTileContent item={selected} installedIds={installedIds} updateIds={updateIds} operations={operations} operationErrors={operationErrors} onOpenDetails={openDetails} onInstall={startInstall} onLaunch={launchApp} />;
     content = <DetailScreen app={selected} installed={installedIds.has(`${selected.source}:${selected.id}`)} updateAvailable={updateIds.has(`${selected.source}:${selected.id}`)} busy={Boolean(currentOperation)}
       busyLabel={currentBusyLabel} progress={currentOperation?.progress ?? ""} percent={currentOperation?.percent ?? null}
       canCancel={Boolean(sources.find((source) => source.name === selected.source)?.cancel)} error={operationErrors[selected.ref] ?? detailError}
