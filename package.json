@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src app --max-warnings=0",
     "check:release-linkage": "node scripts/check-release-linkage.mjs",
-    "test:source-settings": "node --experimental-strip-types scripts/test-source-settings.mjs"
+    "test:source-settings": "node --experimental-strip-types scripts/test-source-settings.mjs",
+    "test:search": "node --experimental-strip-types scripts/test-search.mjs"
   },
   "dependencies": {
     "@expo/ui": "57.0.20",

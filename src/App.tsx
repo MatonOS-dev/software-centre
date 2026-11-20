@@ -4,7 +4,8 @@ import { Button, Host, OutlinedTextField, Row, Text, useNativeState } from "@exp
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, padding, paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
 import type { ScoredApp, StoreApp } from "./sources/Source";
-import { interleave, mergeNew, mergePopular } from "./sources/Collections";
+import { mergeNew, mergePopular } from "./sources/Collections";
+import { DebouncedSearch, rankSearchResults } from "./sources/Search";
 import { MatonOS } from "../modules/matonos-software/src/MatonOS";
 import { useSources, setPluginEnabled } from "./hooks/useStore";
 import type { SourcePlugin } from "../modules/matonos-software/src/MatonOS";
@@ -86,7 +87,9 @@ export default function App() {
   const [sourceIcons, setSourceIcons] = useState<Record<string, string>>({});
   const collectionRequestId = useRef(0);
   const searchRequestId = useRef(0);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchDispatch = useRef<(query: string) => void>(() => {});
+  const searchController = useRef<DebouncedSearch | null>(null);
+  if (!searchController.current) searchController.current = new DebouncedSearch((query) => searchDispatch.current(query));
   const refreshes = useRef(new Map<string, Promise<void>>());
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
   const updateIds = useMemo(() => new Set(updateApps.map((app) => `${app.source}:${app.id}`)), [updateApps]);
@@ -201,48 +204,59 @@ export default function App() {
     });
   }
 
+  function executeSearch(query: string) {
+    const request = ++searchRequestId.current;
+    setSearchErrors([]);
+    setLoading(true); setMessage("");
+    const perSource: StoreApp[][] = sources.map(() => []);
+    const errors: Array<{ source: string; message: string }> = [];
+    let remaining = sources.length;
+    let receivedFirstAnswer = false;
+    const publish = () => {
+      if (request !== searchRequestId.current) return;
+      setApps(rankSearchResults(perSource, query));
+      setSearchErrors([...errors]);
+    };
+    if (remaining === 0) setLoading(false);
+    sources.forEach((source, index) => {
+      source.search(query).then((results) => {
+        perSource[index] = results;
+        publish();
+      }).catch((error: unknown) => {
+        console.error(`${source.name}: search failed`, error);
+        errors.push({ source: source.label ?? source.name, message: errorText(error) });
+        publish();
+      }).finally(() => {
+        remaining -= 1;
+        if (!receivedFirstAnswer && request === searchRequestId.current) {
+          receivedFirstAnswer = true;
+          setLoading(false);
+        }
+        if (remaining === 0 && request === searchRequestId.current) setLoading(false);
+      });
+    });
+  }
+
+  searchDispatch.current = executeSearch;
+
   function runSearch(value: string) {
     setSearchText(value);
     searchNative.set(value);
-    const request = ++searchRequestId.current;
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    setSearchErrors([]);
-    if (!value.trim()) {
+    const query = value.trim();
+    if (!query) {
+      const changed = searchController.current?.schedule("") ?? false;
+      if (!changed) return;
+      searchRequestId.current += 1;
       setLoading(false);
       void loadCollections();
       return;
     }
-    setLoading(true); setMessage("");
-    searchTimer.current = setTimeout(() => {
-      if (request !== searchRequestId.current) return;
-      const perSource: StoreApp[][] = sources.map(() => []);
-      const errors: Array<{ source: string; message: string }> = [];
-      let remaining = sources.length;
-      let receivedFirstAnswer = false;
-      const publish = () => {
-        if (request !== searchRequestId.current) return;
-        setApps(interleave(perSource));
-        setSearchErrors([...errors]);
-      };
-      if (remaining === 0) setLoading(false);
-      sources.forEach((source, index) => {
-        source.search(value.trim()).then((results) => {
-          perSource[index] = results;
-          publish();
-        }).catch((error: unknown) => {
-          console.error(`${source.name}: search failed`, error);
-          errors.push({ source: source.label ?? source.name, message: errorText(error) });
-          publish();
-        }).finally(() => {
-          remaining -= 1;
-          if (!receivedFirstAnswer && request === searchRequestId.current) {
-            receivedFirstAnswer = true;
-            setLoading(false);
-          }
-          if (remaining === 0 && request === searchRequestId.current) setLoading(false);
-        });
-      });
-    }, 250);
+    if (searchController.current?.schedule(query)) {
+      searchRequestId.current += 1;
+      setLoading(true);
+      setMessage("");
+      setSearchErrors([]);
+    }
   }
 
   async function openDetails(app: StoreApp) {
