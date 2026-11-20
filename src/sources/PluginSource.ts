@@ -1,7 +1,7 @@
 import { MatonOS, type SourcePlugin } from "../../modules/matonos-software/src/MatonOS";
 import type { Review, ScoredApp, Source, SourceProgress, StoreApp } from "./Source";
 
-const CONTRACT_VERSION = 3;
+const CONTRACT_VERSION = 4;
 const POPULAR_REVISION = 3;
 const CAPABILITIES = ["", "HAS_AGE_RATINGS", "HAS_REVIEWS", "HAS_ANTI_FEATURES", "HAS_PERMISSIONS", "", "REQUIRES_SETUP"];
 const PAGE = 100;
@@ -22,8 +22,10 @@ function parse<T>(plugin: string, call: string, json: string): T {
   try { return JSON.parse(json) as T; } catch (error) { throw new Error(`${plugin}: ${call} returned invalid JSON`, { cause: error }); }
 }
 function toApp(plugin: string, app: PluginApp, label?: string): StoreApp {
+  const sourceApp = { ...app };
+  delete sourceApp.rating; // Ignore the removed contract field from stale plugin payloads.
   const repo = app.repo ?? "1";
-  return { ...app, description: app.descriptionMarkdown ?? app.description ?? "", screenshots: app.screenshots ?? [], permissions: app.permissions ?? [], source: plugin,
+  return { ...sourceApp, description: app.descriptionMarkdown ?? app.description ?? "", screenshots: app.screenshots ?? [], permissions: app.permissions ?? [], source: plugin,
     ref: app.id, repo, origin: repo, repository: repo, sourceLabel: label };
 }
 async function pages<T>(call: (offset: number, limit: number) => Promise<string>, plugin: string, name: string, start = 0, pageSize = PAGE): Promise<T[]> {
@@ -86,10 +88,12 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
       const result = toApp(pkg, { ...listing, ...details, repo: app.repo ?? listing.repo, repoOptions }, label);
       return result;
     },
-    async reviews(app) {
-      return pages<Omit<Review, "date"> & { date: number }>((offset, limit) => MatonOS.sourceReviews(pkg, app.id, offset, limit), pkg, "reviews")
-        .then((reviews) => reviews.map((review) => ({ ...review, date: new Date(review.date) })));
-    },
+    ...(capabilities.includes("HAS_REVIEWS") ? {
+      async reviews(app: StoreApp) {
+        return pages<Omit<Review, "date"> & { date: number }>((offset, limit) => MatonOS.sourceReviews(pkg, app.id, offset, limit), pkg, "reviews")
+          .then((reviews) => reviews.map((review) => ({ ...review, date: new Date(review.date) })));
+      },
+    } : {}),
     installed: () => list("installed", (offset, limit) => MatonOS.sourceInstalled(pkg, offset, limit)),
     updates: () => list("updates", (offset, limit) => MatonOS.sourceUpdates(pkg, offset, limit)),
     install: (app, operationId) => MatonOS.sourceInstall(pkg, app.id, app.repo ?? "1", operationId),

@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { pluginSources } from "../sources/PluginSource";
+import { attachRatings } from "../sources/ratings";
 import { MatonOS } from "../../modules/matonos-software/src/MatonOS";
 import { toDetails, toListing, type AppDetails, type AppListing, type Review, type Source, type SourceName, type StoreApp } from "../sources/Source";
 
@@ -51,10 +52,7 @@ async function installed(): Promise<Set<string>> {
 
 async function searchSource(source: Source, term: string, ids: Set<string>): Promise<AppListing[]> {
   const { apps: found } = await source.searchPage(term, 0, 100);
-  const rated = source.ratings ? await source.ratings(found).catch((error) => {
-    console.warn(`${source.name}: ratings unavailable`, error);
-    return found;
-  }) : found;
+  const rated = await attachRatings(found);
   return rated.map((app) => toListing({ ...app, installed: ids.has(`${app.source}:${app.id}`) }));
 }
 
@@ -118,8 +116,9 @@ export function useAppDetails(app: AppListing | null): DetailsState {
     const reviews = source.reviews
       ? source.reviews(app as StoreApp).catch((error) => { console.warn(`${source.name}: reviews for ${app.id} failed`, error); return [] as Review[]; })
       : Promise.resolve(undefined);
-    Promise.all([source.details(app as StoreApp), reviews, installed()]).then(([details, list, ids]) => {
-      if (!stale) setResult({ key, app: toDetails({ ...details, rating: details.rating ?? app.rating, installed: ids.has(key) }), reviews: list, error: null });
+    Promise.all([source.details(app as StoreApp), reviews, installed()]).then(async ([details, list, ids]) => {
+      const [rated] = await attachRatings([details]);
+      if (!stale) setResult({ key, app: toDetails({ ...rated, installed: ids.has(key) }), reviews: list, error: null });
     }).catch((error) => {
       console.error(`${source.name}: details for ${app.id} failed`, error);
       if (!stale) setResult({ key, app: null, reviews: undefined, error: String(error?.message ?? error) });

@@ -5,6 +5,7 @@ import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, padding, paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
 import type { ScoredApp, StoreApp } from "./sources/Source";
 import { mergeNew, mergePopular } from "./sources/Collections";
+import { attachRatings, submitRating } from "./sources/ratings";
 import { DebouncedSearch, rankSearchResults } from "./sources/Search";
 import { MatonOS } from "../modules/matonos-software/src/MatonOS";
 import { useSources, setPluginEnabled } from "./hooks/useStore";
@@ -121,7 +122,7 @@ export default function App() {
         })))).flat();
         const unavailable = JSON.parse(await MatonOS.sourceUnavailableOwners()) as Array<{ packageName: string; source: string; id: string; name: string }>;
         entries.push(...unavailable.map((owned) => ({ id: owned.id, source: owned.source, name: owned.name, summary: "Installed app; its source is unavailable.", icon: "", developer: "", description: "", screenshots: [], permissions: [], ref: owned.packageName, packageName: owned.packageName, sourceUnavailable: true })));
-        setInstalledApps(entries);
+        setInstalledApps(await attachRatings(entries));
       } catch (error) {
         setInstalledApps([]); setInstalledError(errorText(error));
       }
@@ -135,7 +136,7 @@ export default function App() {
           console.error(`${source.name}: listing updates failed`, error);
           return [] as StoreApp[];
         })))).flat();
-        setUpdateApps(entries);
+        setUpdateApps(await attachRatings(entries));
       } catch (error) { console.error("Listing updates failed", error); setUpdateApps([]); setMessage(errorText(error)); }
     });
   }
@@ -154,15 +155,21 @@ export default function App() {
       if (request !== collectionRequestId.current) return;
       popularReceived = true;
       const rows = mergePopular(popularResults).slice(0, 250);
-      setPopularApps(rows); setCollectionLoading((state) => ({ ...state, popular: false }));
-      void MatonOS.setBrowseCache("popular-score-v2", JSON.stringify(rows)).catch((error) => console.warn("Writing Popular browse cache failed", error));
+      void attachRatings(rows).then((rated) => {
+        if (request !== collectionRequestId.current) return;
+        setPopularApps(rated); setCollectionLoading((state) => ({ ...state, popular: false }));
+        void MatonOS.setBrowseCache("popular-score-v2", JSON.stringify(rated)).catch((error) => console.warn("Writing Popular browse cache failed", error));
+      });
     };
     const publishNew = () => {
       if (request !== collectionRequestId.current) return;
       newReceived = true;
       const rows = mergeNew(newResults).slice(0, 250);
-      setNewApps(rows); setCollectionLoading((state) => ({ ...state, new: false }));
-      void MatonOS.setBrowseCache("new", JSON.stringify(rows)).catch((error) => console.warn("Writing New browse cache failed", error));
+      void attachRatings(rows).then((rated) => {
+        if (request !== collectionRequestId.current) return;
+        setNewApps(rated); setCollectionLoading((state) => ({ ...state, new: false }));
+        void MatonOS.setBrowseCache("new", JSON.stringify(rated)).catch((error) => console.warn("Writing New browse cache failed", error));
+      });
     };
     // Popular is versioned because its ordering comes from plugin scores; do not
     // show a persisted collection from a prior scoring implementation as current.
@@ -170,7 +177,7 @@ export default function App() {
       try {
         const cached = await MatonOS.getBrowseCache(key);
         if (!cached || request !== collectionRequestId.current) return;
-        const rows = JSON.parse(cached) as StoreApp[];
+        const rows = await attachRatings(JSON.parse(cached) as StoreApp[]);
         if (key === "popular-score-v2" && !popularReceived) setPopularApps(rows);
         if (key === "new" && !newReceived) setNewApps(rows);
       } catch (error) { console.warn(`Reading ${key} browse cache failed`, error); }
@@ -218,7 +225,9 @@ export default function App() {
     for (const source of sources) searchPages.current.set(`${request}:${source.name}`, { offset: 0, hasMore: true, inFlight: false });
     const publish = () => {
       if (request !== searchRequestId.current) return;
-      setApps(rankSearchResults(perSource, query));
+      void attachRatings(rankSearchResults(perSource, query)).then((rated) => {
+        if (request === searchRequestId.current) setApps(rated);
+      });
       setSearchErrors([...errors]);
     };
     if (sources.length === 0) setLoading(false);
@@ -296,7 +305,8 @@ export default function App() {
     try {
       const source = sources.find((candidate) => candidate.name === app.source);
       if (!source) throw new Error("This app's source is no longer enabled.");
-      setSelected(await source.details(app));
+      const [rated] = await attachRatings([await source.details(app)]);
+      setSelected(rated);
     } catch (error) { setDetailError(errorText(error)); }
   }
 
@@ -464,6 +474,7 @@ export default function App() {
     content = <DetailScreen app={selected} installed={installedIds.has(`${selected.source}:${selected.id}`)} updateAvailable={updateIds.has(`${selected.source}:${selected.id}`)} busy={Boolean(currentOperation)}
       busyLabel={currentBusyLabel} progress={currentOperation?.progress ?? ""} percent={currentOperation?.percent ?? null}
       canCancel={Boolean(sources.find((source) => source.name === selected.source)?.cancel)} error={operationErrors[selected.ref] ?? detailError}
+      onRate={(stars) => submitRating(selected, stars)}
       onCancel={() => void cancelOperation(selected.ref)} onBack={() => setSelected(null)} onInstall={() => void startInstall(selected)} onRemove={() => void startUninstall(selected)} onOpen={() => void launchApp(selected)} onChooseRepository={(repoId) => void chooseRepository(repoId)} />;
   } else if (page === "sources") {
     content = <SourcesScreen rows={sourceRows} />;

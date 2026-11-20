@@ -3,16 +3,17 @@
 
 # Software Center (`org.matonos.software`) — source plugins
 
-Browse collections, search, details and ratings come from enabled backend
-plugins. The Flatpak plugin supplies Flathub's Popular/New collections and
-ODRS ratings; the F-Droid plugin supplies New and a 0–10 Popular heuristic
-from its cached index. F-Droid has no download counts, so its score combines
-a curated known-app signal, version history, catalogue age, update freshness
-and anti-feature penalties. Equal scores are merged round-robin across
-enabled sources, so source order cannot crowd out other catalogues. The store has no built-in Flathub source. Enabled
-backend apps are loaded through `SourcePlugins` and wrapped by `PluginSource`, using the contract in
-[SOURCE-PLUGINS.md](contract/SOURCE-PLUGINS.md). System plugins start enabled; the
-Sources controls can toggle them and refresh the session source registry.
+Browse collections and search results come from enabled backend plugins. The store
+fetches and submits every rating through one source-neutral service at
+`https://maton.hanro50.net.za/api`; plugins never own or emit ratings. Popular
+scores remain plugin supplied. The Flatpak plugin supplies Flathub's
+Popular/New collections; F-Droid supplies New and a 0–10 score based on shared
+server download counts. Equal scores are merged round-robin across enabled
+sources, so source order cannot crowd out other catalogues. The store has no
+built-in Flathub source. Enabled backend apps are loaded through `SourcePlugins`
+and wrapped by `PluginSource`, using the contract in
+[SOURCE-PLUGINS.md](contract/SOURCE-PLUGINS.md). System plugins start enabled;
+the Sources controls can toggle them and refresh the session source registry.
 Only plugins advertising `HAS_REPOSITORIES` get repository management.
 
 F-Droid now lives in the separate Java app

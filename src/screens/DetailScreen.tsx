@@ -8,6 +8,7 @@ import type { StoreApp } from "../sources/Source";
 import { MaterialSymbol } from "../components/MaterialSymbol";
 import { PermissionList } from "../components/PermissionList";
 import { Show } from "../components/Show";
+import { RatingStars } from "./RatingStars";
 
 type Tab = "details" | "permissions";
 
@@ -124,10 +125,10 @@ function DetailFacts({ app }: { app: StoreApp }) {
   return <Column>{elements}</Column>;
 }
 
-export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, error,
+export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel, progress, percent, canCancel, error, onRate,
   onBack, onInstall, onRemove, onOpen, onCancel, onChooseRepository }: {
   app: StoreApp; installed: boolean; updateAvailable: boolean; busy: boolean; busyLabel: string;
-  progress: string; percent: number | null; canCancel: boolean; error: string;
+  progress: string; percent: number | null; canCancel: boolean; error: string; onRate: (stars: number) => Promise<void>;
   onBack: () => void; onInstall: () => void; onRemove: () => void; onOpen: () => void; onCancel: () => void; onChooseRepository: (repoId: string) => void;
 }) {
   const colors = useMaterialColors();
@@ -164,6 +165,7 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     {selectedRepositoryNote(selectedRepository?.note)}
     {progressPanel(progress, percent, busy, canCancel, onCancel)}
     <Show when={Boolean(error)}><Text style={{ typography: "bodyMedium" }} color="#b3261e">{error}</Text></Show>
+    <RatingStars app={app} installed={installed} onRate={onRate} />
     <ScreenshotStrip app={app} />
     <Row horizontalArrangement={{ spacedBy: 8 }}>
       <Button onClick={() => setTab("details")}><Text>Details</Text></Button>

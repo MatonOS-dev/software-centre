@@ -12,11 +12,13 @@ export type AppListing = {
   source: SourceName;
   /** Human-readable source name shown on listings; falls back to `source`. */
   sourceLabel?: string;
+  /** Android package id when it differs from the source listing id. */
+  packageName?: string;
   name: string;
   summary: string;
   icon: string;
   developer: string;
-  /** Average 1–5 and vote count; undefined when the source has no ratings. */
+  /** Store-owned rating summary, attached after source data is loaded. */
   rating?: Rating;
   installed?: boolean;
   /** Latest version the source offers. */
@@ -60,7 +62,7 @@ export type StoreApp = AppDetails & {
   repo?: string;
   candidates?: StoreApp[];
   repoOptions?: RepoOption[];
-  /** Android package to uninstall when it differs from id (plugin sources). */
+  /** Source-neutral app key input and Android package to uninstall when it differs from id. */
   packageName?: string;
   sourceUnavailable?: boolean;
   added?: number | string;
@@ -69,7 +71,7 @@ export type ScoredApp = { app: StoreApp; score: number };
 
 export function toListing(app: StoreApp): AppListing {
   return { id: app.id, source: app.source, name: app.name, summary: app.summary, icon: app.icon, developer: app.developer,
-    rating: app.rating, installed: app.installed, versionName: app.versionName, origin: app.origin ?? app.repository,
+    rating: app.rating, installed: app.installed, versionName: app.versionName, packageName: app.packageName, origin: app.origin ?? app.repository,
     badges: app.badges, repoOptions: app.repoOptions, canLaunch: app.canLaunch };
 }
 
@@ -108,8 +110,6 @@ export interface Source {
   cancel?(operationId: string): Promise<void>;
   /** Optional: sources without a reviews backend leave it out. */
   reviews?(app: StoreApp): Promise<Review[]>;
-  /** Optional: fills app.rating for a batch of results. */
-  ratings?(apps: StoreApp[]): Promise<StoreApp[]>;
   progress(listener: (event: SourceProgress) => void): { remove(): void };
 }
 
