@@ -84,8 +84,10 @@ export default function App() {
   const [operations, setOperations] = useState<Record<string, Operation>>({});
   const [operationErrors, setOperationErrors] = useState<Record<string, string>>({});
   const [sourceIcons, setSourceIcons] = useState<Record<string, string>>({});
-  const requestId = useRef(0);
-  const initialInstalledRefresh = useRef(false);
+  const collectionRequestId = useRef(0);
+  const searchRequestId = useRef(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshes = useRef(new Map<string, Promise<void>>());
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
   const updateIds = useMemo(() => new Set(updateApps.map((app) => `${app.source}:${app.id}`)), [updateApps]);
   const updateOperation = (ref: string, change: Operation | null) => setOperations((current) => {
@@ -93,30 +95,48 @@ export default function App() {
     return { ...current, [ref]: change };
   });
 
-  async function refreshInstalled() {
-    setInstalledError("");
-    try {
-      const entries = (await Promise.all(sources.map((source) => source.installed().catch((error) => {
-        console.error(`${source.name}: listing installed apps failed`, error);
-        return [] as StoreApp[];
-      })))).flat();
-      const unavailable = JSON.parse(await MatonOS.sourceUnavailableOwners()) as Array<{ packageName: string; source: string; id: string; name: string }>;
-      entries.push(...unavailable.map((owned) => ({ id: owned.id, source: owned.source, name: owned.name, summary: "Installed app; its source is unavailable.", icon: "", developer: "", description: "", screenshots: [], permissions: [], ref: owned.packageName, packageName: owned.packageName, sourceUnavailable: true })));
-      setInstalledApps(entries);
-    } catch (error) {
-      setInstalledApps([]); setInstalledError(errorText(error));
-    }
+  function refreshOnce(key: string, task: () => Promise<void>): Promise<void> {
+    const existing = refreshes.current.get(key);
+    if (existing) return existing;
+    const pending = task().finally(() => {
+      if (refreshes.current.get(key) === pending) refreshes.current.delete(key);
+    });
+    refreshes.current.set(key, pending);
+    return pending;
   }
 
-  async function refreshUpdates() {
-    try {
-      const entries = (await Promise.all(sources.map((source) => source.updates()))).flat();
-      setUpdateApps(entries);
-    } catch (error) { console.error("Listing updates failed", error); setUpdateApps([]); setMessage(errorText(error)); }
+  function refreshInstalled(): Promise<void> {
+    return refreshOnce(`installed:${sources.map((source) => source.name).join(",")}`, async () => {
+      setInstalledError("");
+      try {
+        const entries = (await Promise.all(sources.map((source) => source.installed().catch((error) => {
+          console.error(`${source.name}: listing installed apps failed`, error);
+          return [] as StoreApp[];
+        })))).flat();
+        const unavailable = JSON.parse(await MatonOS.sourceUnavailableOwners()) as Array<{ packageName: string; source: string; id: string; name: string }>;
+        entries.push(...unavailable.map((owned) => ({ id: owned.id, source: owned.source, name: owned.name, summary: "Installed app; its source is unavailable.", icon: "", developer: "", description: "", screenshots: [], permissions: [], ref: owned.packageName, packageName: owned.packageName, sourceUnavailable: true })));
+        setInstalledApps(entries);
+      } catch (error) {
+        setInstalledApps([]); setInstalledError(errorText(error));
+      }
+    });
   }
 
-  async function loadCollections() {
-    const request = ++requestId.current;
+  function refreshUpdates(): Promise<void> {
+    return refreshOnce(`updates:${sources.map((source) => source.name).join(",")}`, async () => {
+      try {
+        const entries = (await Promise.all(sources.map((source) => source.updates().catch((error) => {
+          console.error(`${source.name}: listing updates failed`, error);
+          return [] as StoreApp[];
+        })))).flat();
+        setUpdateApps(entries);
+      } catch (error) { console.error("Listing updates failed", error); setUpdateApps([]); setMessage(errorText(error)); }
+    });
+  }
+
+  function loadCollections(): Promise<void> {
+    return refreshOnce(`collections:${sources.map((source) => source.name).join(",")}`, async () => {
+    const request = ++collectionRequestId.current;
     setMessage(""); setSearchErrors([]);
     setCollectionErrors({ popular: "", new: "" });
     setCollectionLoading({ popular: true, new: true });
@@ -125,14 +145,14 @@ export default function App() {
     let popularReceived = false;
     let newReceived = false;
     const publishPopular = () => {
-      if (request !== requestId.current) return;
+      if (request !== collectionRequestId.current) return;
       popularReceived = true;
       const rows = mergePopular(popularResults).slice(0, 250);
       setPopularApps(rows); setCollectionLoading((state) => ({ ...state, popular: false }));
       void MatonOS.setBrowseCache("popular-score-v2", JSON.stringify(rows)).catch((error) => console.warn("Writing Popular browse cache failed", error));
     };
     const publishNew = () => {
-      if (request !== requestId.current) return;
+      if (request !== collectionRequestId.current) return;
       newReceived = true;
       const rows = mergeNew(newResults).slice(0, 250);
       setNewApps(rows); setCollectionLoading((state) => ({ ...state, new: false }));
@@ -143,7 +163,7 @@ export default function App() {
     const caches = ["popular-score-v2", "new"].map(async (key) => {
       try {
         const cached = await MatonOS.getBrowseCache(key);
-        if (!cached || request !== requestId.current) return;
+        if (!cached || request !== collectionRequestId.current) return;
         const rows = JSON.parse(cached) as StoreApp[];
         if (key === "popular-score-v2" && !popularReceived) setPopularApps(rows);
         if (key === "new" && !newReceived) setNewApps(rows);
@@ -174,38 +194,55 @@ export default function App() {
       })(),
     ]);
     await Promise.allSettled([...caches, ...tasks]);
-    if (request === requestId.current) {
+    if (request === collectionRequestId.current) {
       if (!popularReceived) { setPopularApps([]); setCollectionLoading((state) => ({ ...state, popular: false })); }
       if (!newReceived) { setNewApps([]); setCollectionLoading((state) => ({ ...state, new: false })); }
     }
+    });
   }
 
-  async function runSearch(value: string) {
+  function runSearch(value: string) {
     setSearchText(value);
     searchNative.set(value);
-    const request = ++requestId.current;
+    const request = ++searchRequestId.current;
+    if (searchTimer.current) clearTimeout(searchTimer.current);
     setSearchErrors([]);
     if (!value.trim()) {
-      await loadCollections();
+      setLoading(false);
+      void loadCollections();
       return;
     }
     setLoading(true); setMessage("");
-    try {
-      const results = await Promise.allSettled(sources.map((source) => source.search(value.trim())));
-      const perSource: StoreApp[][] = [];
+    searchTimer.current = setTimeout(() => {
+      if (request !== searchRequestId.current) return;
+      const perSource: StoreApp[][] = sources.map(() => []);
       const errors: Array<{ source: string; message: string }> = [];
-      results.forEach((result, index) => {
-        if (result.status === "fulfilled") perSource.push(result.value);
-        else {
-          const source = sources[index];
-          const error = errorText(result.reason);
-          console.error(`${source.name}: search failed`, result.reason);
-          errors.push({ source: source.label ?? source.name, message: error });
-        }
+      let remaining = sources.length;
+      let receivedFirstAnswer = false;
+      const publish = () => {
+        if (request !== searchRequestId.current) return;
+        setApps(interleave(perSource));
+        setSearchErrors([...errors]);
+      };
+      if (remaining === 0) setLoading(false);
+      sources.forEach((source, index) => {
+        source.search(value.trim()).then((results) => {
+          perSource[index] = results;
+          publish();
+        }).catch((error: unknown) => {
+          console.error(`${source.name}: search failed`, error);
+          errors.push({ source: source.label ?? source.name, message: errorText(error) });
+          publish();
+        }).finally(() => {
+          remaining -= 1;
+          if (!receivedFirstAnswer && request === searchRequestId.current) {
+            receivedFirstAnswer = true;
+            setLoading(false);
+          }
+          if (remaining === 0 && request === searchRequestId.current) setLoading(false);
+        });
       });
-      if (request === requestId.current) { setApps(interleave(perSource)); setSearchErrors(errors); }
-    } catch (error) { if (request === requestId.current) setMessage(errorText(error)); }
-    finally { if (request === requestId.current) setLoading(false); }
+    }, 250);
   }
 
   async function openDetails(app: StoreApp) {
@@ -261,9 +298,9 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (sources.length > 0 && !initialInstalledRefresh.current) {
-      initialInstalledRefresh.current = true;
+    if (sources.length > 0) {
       void refreshInstalled();
+      void refreshUpdates();
     }
     const timer = setTimeout(() => { void loadCollections(); }, 0);
     return () => clearTimeout(timer);
@@ -295,11 +332,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resubscribe only when source registry changes
   }, [sources, operations]);
 
-  useEffect(() => {
-    const timer = setTimeout(() => { void refreshInstalled(); void refreshUpdates(); }, 0);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when the source registry changes
-  }, [sources]);
   useEffect(() => {
     // Packages can be removed outside the store (Settings, pm uninstall).
     const subscription = AppState.addEventListener("change", (state) => {
