@@ -26,7 +26,7 @@ type Operation = { app: StoreApp; id: string; kind: "install" | "update" | "unin
 function LiveImageNotice() {
   return <Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
     <Text style={{ typography: "bodyMedium" }} modifiers={[padding(16, 12, 16, 0)]}>
-      Running from the live image: apps you install are kept in memory, are lost when you restart, and large apps may not fit. Install MatonOS to keep them.
+      You're running the live image, so apps can't be installed. Install MatonOS to add apps.
     </Text>
   </Host>;
 }

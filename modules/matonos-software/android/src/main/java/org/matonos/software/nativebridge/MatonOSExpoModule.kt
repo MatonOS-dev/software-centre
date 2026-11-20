@@ -56,13 +56,7 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("setSourceEnabled") { pkg: String, enabled: Boolean -> requirePlugins().setEnabled(pkg, enabled) }
     AsyncFunction("sourceInfo") { pkg: String -> json.toJson(sourceCall(pkg) { it.info() }) }.runOnQueue(sourceCallQueue)
     // Live boots keep /data in RAM: installs vanish on reboot and big downloads can run out of memory.
-    AsyncFunction("isLiveImage") {
-      val process = ProcessBuilder("/system/bin/getprop", "ro.boot.matonos.live").redirectErrorStream(true).start()
-      val output = process.inputStream.bufferedReader().use { it.readText().trim() }
-      val code = process.waitFor()
-      if (code != 0) throw IllegalStateException("getprop ro.boot.matonos.live exited $code: $output")
-      output == "1"
-    }
+    AsyncFunction("isLiveImage") { liveImage() }
     AsyncFunction("sourceUnavailableOwners") { json.toJson(requirePlugins().unavailableOwners()) }
     AsyncFunction("sourceQuery") { pkg: String, kind: String, term: String, offset: Int, limit: Int -> requirePlugins().query(pkg, kind, term, offset, limit) }.runOnQueue(sourceCallQueue)
     AsyncFunction("sourceRepositories") { pkg: String -> requirePlugins().repositories(pkg) }.runOnQueue(sourceCallQueue)
@@ -132,7 +126,10 @@ class MatonOSExpoModule : Module() {
       val details = sourceCall(pkg) { it.details(id, repo) }; applyStoredOrigins(pkg, arrayOf(details.listing)); json.toJson(details)
     }.runOnQueue(sourceCallQueue)
     AsyncFunction("sourceReviews") { pkg: String, id: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.reviews(id, offset, limit) }) }.runOnQueue(sourceCallQueue)
-    AsyncFunction("sourceInstall") { pkg: String, id: String, repo: String, operationId: String -> requirePlugins().install(pkg, id, repo, operationId) }
+    AsyncFunction("sourceInstall") { pkg: String, id: String, repo: String, operationId: String ->
+      if (liveImage()) throw IllegalStateException("Apps can't be installed on the live image. Install MatonOS first.")
+      requirePlugins().install(pkg, id, repo, operationId)
+    }
     AsyncFunction("sourceCancel") { pkg: String, operationId: String -> requirePlugins().cancel(pkg, operationId) }
     AsyncFunction("sourceRunning") { pkg: String, operationId: String -> requirePlugins().running(pkg, operationId) }
     AsyncFunction("sourceUninstall") { pkg: String, packageName: String, operationId: String ->
@@ -183,4 +180,12 @@ class MatonOSExpoModule : Module() {
     }).also { plugins = it }
   }
 
+
+  private fun liveImage(): Boolean {
+    val process = ProcessBuilder("/system/bin/getprop", "ro.boot.matonos.live").redirectErrorStream(true).start()
+    val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+    val code = process.waitFor()
+    if (code != 0) throw IllegalStateException("getprop ro.boot.matonos.live exited $code: $output")
+    return output == "1"
+  }
 }
