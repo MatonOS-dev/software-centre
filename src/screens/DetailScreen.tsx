@@ -9,7 +9,7 @@ import { MaterialSymbol } from "../components/MaterialSymbol";
 import { PermissionList } from "../components/PermissionList";
 import { Show } from "../components/Show";
 import { RatingStars, StarRow } from "./RatingStars";
-import { fetchReviews, type OwnedReview } from "../sources/ratings";
+import { appRatingKey, fetchReviews, type OwnedReview } from "../sources/ratings";
 import type { Review } from "../sources/Source";
 import { canSubmitReview, reviewErrorMessage } from "./reviewFormState";
 
@@ -161,13 +161,17 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
   const bodyNative = useNativeState("");
   const offset = useRef(0);
   const loadingReviews = useRef(false);
-  const [hasMoreReviews, setHasMoreReviews] = useState(true);
+  const [hasMoreReviews, setHasMoreReviews] = useState(false);
+  // Keyed on the rating key, not the app object: the object is rebuilt on re-renders, which
+  // would restart the request and drop its result.
+  const reviewKey = appRatingKey(app);
   useEffect(() => {
     let active = true; offset.current = 0;
     void fetchReviews(app, 0, 20).then((items) => { if (active) { setReviews(items); offset.current = items.length; setHasMoreReviews(items.length === 20); } })
       .catch((cause) => { if (active) setReviewError(cause instanceof Error ? cause.message : "Reviews could not be loaded."); });
     return () => { active = false; };
-  }, [app]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewKey]);
   async function loadMoreReviews() {
     if (loadingReviews.current || !hasMoreReviews) return;
     loadingReviews.current = true;
