@@ -102,13 +102,13 @@ function safetySection(app: StoreApp) {
 }
 
 // React Native views (Markdown, screenshot list) sit in RNHostView; a Host never nests in a Host.
-function tabDetails(app: StoreApp, markdown: string, colors: ReturnType<typeof useMaterialColors>, openLink: (event: { url: string }) => void) {
+function tabDetails(app: StoreApp, markdown: string, colors: ReturnType<typeof useMaterialColors>, openLink: (event: { url: string }) => void, contentWidth: number) {
   return <Column verticalArrangement={{ spacedBy: 14 }}>
-    <RNHostView matchContents><View style={{ width: "100%" }}><EnrichedMarkdownText markdown={markdown} flavor="commonmark" selectable onLinkPress={openLink}
+    <RNHostView matchContents><View style={{ width: contentWidth }}><EnrichedMarkdownText markdown={markdown} flavor="commonmark" selectable onLinkPress={openLink}
     markdownStyle={{ paragraph: { fontSize: 14, color: colors.onSurface, lineHeight: 21, marginBottom: 12 },
       h1: { color: colors.onSurface }, h2: { color: colors.onSurface }, h3: { color: colors.onSurface },
       list: { color: colors.onSurface, itemSpacing: 5 }, link: { color: colors.primary } }} /></View></RNHostView>
-      <ScreenshotStrip app={app} />
+      <ScreenshotStrip app={app} width={contentWidth} />
       <DetailFacts app={app} />
       {safetySection(app)}
       <Text style={{ typography: "bodySmall" }}>{`Package name: ${app.packageName}`}</Text>
@@ -127,12 +127,12 @@ function actionHandler(updateAvailable: boolean, installed: boolean, onInstall: 
   return onOpen;
 }
 
-function ScreenshotStrip({ app }: { app: StoreApp }) {
+function ScreenshotStrip({ app, width }: { app: StoreApp; width: number }) {
   if (app.screenshots.length === 0) return null;
   const screenshots = app.screenshots.map((src, index) => screenshotItem(app, src, index));
   return <Column verticalArrangement={{ spacedBy: 8 }}>
     <Text style={{ typography: "titleMedium" }}>Screenshots</Text>
-    <RNHostView matchContents><View style={{ height: 349, width: "100%" }}><FlatList removeClippedSubviews={false} horizontal data={screenshots} keyExtractor={(_, index) => `${app.id}-screenshot-${index}`} renderItem={({ item }) => item} /></View></RNHostView>
+    <RNHostView matchContents><View style={{ height: 349, width }}><FlatList removeClippedSubviews={false} horizontal data={screenshots} keyExtractor={(_, index) => `${app.id}-screenshot-${index}`} renderItem={({ item }) => item} /></View></RNHostView>
   </Column>;
 }
 
@@ -240,6 +240,8 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     <Show when={hasMoreReviews}><Button onClick={() => void loadMoreReviews()}><Text>Load more</Text></Button></Show>
   </Column>;
   const [tab, setTab] = useState<Tab>("details");
+  // RN views hosted in Compose need an explicit width: the page width minus its horizontal padding.
+  const [contentWidth, setContentWidth] = useState(0);
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const actionLabel = actionButtonLabel(busy, busyLabel, updateAvailable, installed);
   const action = actionHandler(updateAvailable, installed, onInstall, onOpen);
@@ -252,7 +254,7 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     try { const url = new URL(event.url); if (url.protocol === "http:" || url.protocol === "https:") void Linking.openURL(url.toString()); }
     catch (error) { console.error("Opening app description link failed", error); }
   };
-  return <ScrollView onScroll={(event) => { const {contentOffset,contentSize,layoutMeasurement}=event.nativeEvent; if (tab === "reviews" && contentOffset.y+layoutMeasurement.height>=contentSize.height-240) void loadMoreReviews(); }} scrollEventThrottle={400} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 14 }}>
+  return <ScrollView onScroll={(event) => { const {contentOffset,contentSize,layoutMeasurement}=event.nativeEvent; if (tab === "reviews" && contentOffset.y+layoutMeasurement.height>=contentSize.height-240) void loadMoreReviews(); }} scrollEventThrottle={400} onLayout={(event) => setContentWidth(event.nativeEvent.layout.width - 48)} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 14 }}>
     <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><Column verticalArrangement={{ spacedBy: 14 }}>
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }} modifiers={[fillMaxWidth()]}>
       <Button onClick={onBack}><Text>‹  Back</Text></Button>
@@ -271,7 +273,7 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     <TabBar tab={tab} setTab={setTab} />
     <Show when={tab === "details"}><Text style={{ typography: "titleMedium" }}>About this app</Text></Show>
     <Show when={tab === "permissions"}><PermissionList app={app} /></Show>
-    <Show when={tab === "details"}>{tabDetails(app, markdown, colors, openLink)}</Show>
+    <Show when={tab === "details"}>{tabDetails(app, markdown, colors, openLink, contentWidth)}</Show>
     <Show when={tab === "reviews"}>{reviewsContent}</Show>
     </Column></Host>
   </ScrollView>;
