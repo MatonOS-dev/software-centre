@@ -6,17 +6,15 @@ const CACHE_MS = 60_000;
 const cache = new Map<string, { at: number; rating: Rating }>();
 
 type ApiRating = { count?: unknown; avg?: unknown; histogram?: unknown };
-export function appRatingKey(app: { id: string; packageName?: string }): string {
-  const parts = app.id.split("/");
-  if (parts.length === 4 && parts[0] === "app" && parts[1]) return parts[1];
-  return app.packageName || app.id;
+export function appRatingKey(app: { packageName: string }): string {
+  return app.packageName;
 }
 function normalizeRating(value: ApiRating): Rating {
   const histogram = Array.isArray(value.histogram) ? value.histogram.slice(0, 5).map((v) => Number(v) || 0) : [];
   while (histogram.length < 5) histogram.push(0);
   return { count: Number(value.count) || 0, average: Number(value.avg) || 0, histogram: histogram as Rating["histogram"] };
 }
-export async function fetchRatings(apps: Array<{ id: string; packageName?: string }>) {
+export async function fetchRatings(apps: Array<{ packageName: string }>) {
   const keys = [...new Set(apps.map(appRatingKey))], now = Date.now();
   const stale = keys.filter((key) => !cache.has(key) || now - cache.get(key)!.at >= CACHE_MS);
   for (let i = 0; i < stale.length; i += 100) {

@@ -12,7 +12,7 @@ export function sourceInfo(plugin: string, json: string): SourceInfo {
 }
 type PluginApp = {
   id: string; name: string; summary: string; icon: string; developer: string;
-  repo?: string; packageName?: string; listing?: PluginApp;
+  repo?: string; packageName: string; listing?: PluginApp;
   description?: string; screenshots?: string[]; permissions?: string[];
   descriptionMarkdown?: string;
   repoOptions?: Array<{ repoId: string; name: string; version?: string; installable: boolean; note?: string }>;
@@ -22,6 +22,7 @@ function parse<T>(plugin: string, call: string, json: string): T {
   try { return JSON.parse(json) as T; } catch (error) { throw new Error(`${plugin}: ${call} returned invalid JSON`, { cause: error }); }
 }
 function toApp(plugin: string, app: PluginApp, label?: string): StoreApp {
+  if (!app.packageName) throw new Error(`${plugin}: app ${app.id} is missing packageName`);
   const sourceApp = { ...app };
   delete sourceApp.rating; // Ignore the removed contract field from stale plugin payloads.
   const repo = app.repo ?? "1";
@@ -39,7 +40,7 @@ async function pages<T>(call: (offset: number, limit: number) => Promise<string>
 function groupCandidates(plugin: string, apps: StoreApp[]): StoreApp[] {
   const groups = new Map<string, StoreApp[]>();
   for (const app of apps) {
-    const key = app.packageName || app.id;
+    const key = app.packageName;
     const group = groups.get(key) ?? []; group.push(app); groups.set(key, group);
   }
   return [...groups.values()].map((candidates) => {
@@ -81,7 +82,7 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
     installed: () => list("installed", (offset, limit) => MatonOS.sourceQuery(pkg, "installed", "", offset, limit)),
     updates: () => list("updates", (offset, limit) => MatonOS.sourceQuery(pkg, "updates", "", offset, limit)),
     install: (app, operationId) => MatonOS.sourceInstall(pkg, app.id, app.repo ?? "1", operationId),
-    uninstall: (app, operationId) => MatonOS.sourceUninstall(pkg, app.packageName ?? app.id, operationId),
+    uninstall: (app, operationId) => MatonOS.sourceUninstall(pkg, app.packageName, operationId),
     cancel: (operationId) => MatonOS.sourceCancel(pkg, operationId),
     progress(listener: (event: SourceProgress) => void) {
       return MatonOS.addStoreListener((event) => { if (event.source === pkg) listener(event); });

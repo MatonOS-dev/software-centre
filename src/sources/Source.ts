@@ -12,8 +12,8 @@ export type AppListing = {
   source: SourceName;
   /** Human-readable source name shown on listings; falls back to `source`. */
   sourceLabel?: string;
-  /** Android package id when it differs from the source listing id. */
-  packageName?: string;
+  /** Stable package id used for ratings and package ownership. */
+  packageName: string;
   name: string;
   summary: string;
   icon: string;
@@ -63,7 +63,7 @@ export type StoreApp = AppDetails & {
   candidates?: StoreApp[];
   repoOptions?: RepoOption[];
   /** Source-neutral app key input and Android package to uninstall when it differs from id. */
-  packageName?: string;
+  packageName: string;
   sourceUnavailable?: boolean;
   added?: number | string;
 };

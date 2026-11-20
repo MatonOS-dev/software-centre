@@ -111,6 +111,7 @@ function tabDetails(app: StoreApp, markdown: string, colors: ReturnType<typeof u
     <ScreenshotStrip app={app} />
     <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><DetailFacts app={app} /></Host>
     {safetySection(app)}
+    <Text style={{ typography: "bodySmall" }}>{`Package name: ${app.packageName}`}</Text>
   </Column>;
 }
 
