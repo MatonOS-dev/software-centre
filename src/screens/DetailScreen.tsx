@@ -8,7 +8,7 @@ import type { StoreApp } from "../sources/Source";
 import { MaterialSymbol } from "../components/MaterialSymbol";
 import { PermissionList } from "../components/PermissionList";
 import { Show } from "../components/Show";
-import { RatingStars } from "./RatingStars";
+import { RatingStars, StarRow } from "./RatingStars";
 import { fetchReviews, type OwnedReview } from "../sources/ratings";
 import type { Review } from "../sources/Source";
 import { canSubmitReview, reviewErrorMessage } from "./reviewFormState";
@@ -113,6 +113,20 @@ function ScreenshotStrip({ app }: { app: StoreApp }) {
   </Column>;
 }
 
+function ReviewCard({ review }: { review: Review }) {
+  return <Column verticalArrangement={{spacedBy:4}} modifiers={[padding(12,8,12,8)]}>
+    <Text style={{typography:"titleSmall"}}>{`${"★".repeat(review.rating)}${"☆".repeat(5-review.rating)}  ${review.author}`}</Text>
+    <Show when={Boolean(review.summary)}><Text style={{typography:"titleMedium"}}>{review.summary}</Text></Show>
+    <Text style={{typography:"bodyMedium"}}>{review.description}</Text>
+    <Text style={{typography:"bodySmall"}}>{review.date.toLocaleDateString()}</Text>
+  </Column>;
+}
+
+function ErrorNote({ message }: { message: string }) {
+  if (!message) return null;
+  return <Text style={{typography:"bodySmall"}} color="#b3261e">{message}</Text>;
+}
+
 function DetailFacts({ app }: { app: StoreApp }) {
   const refParts = app.ref.split("/");
   const branch = refParts.length > 3 ? refParts[3] : undefined;
@@ -181,15 +195,9 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     catch (cause) { setReviewError(cause instanceof Error ? cause.message : "Sign-in was not completed."); }
     finally { setReviewBusy(false); }
   }
-  const reviewCards = reviews.map((review) => <Host key={review.id} matchContents={{vertical:true}}><Column verticalArrangement={{spacedBy:4}} modifiers={[padding(12,8,12,8)]}>
-    <Text style={{typography:"titleSmall"}}>{`${"★".repeat(review.rating)}${"☆".repeat(5-review.rating)}  ${review.author}`}</Text>
-    {review.summary ? <Text style={{typography:"titleMedium"}}>{review.summary}</Text> : null}
-    <Text style={{typography:"bodyMedium"}}>{review.description}</Text>
-    <Text style={{typography:"bodySmall"}}>{review.date.toLocaleDateString()}</Text>
-  </Column></Host>);
-  const reviewStarButtons = [1,2,3,4,5].map((stars) => <Button key={stars} enabled={!reviewBusy} onClick={() => setReviewStars(stars)}><Text>{stars <= reviewStars ? "★" : "☆"}</Text></Button>);
+  const reviewCards = reviews.map((review) => <ReviewCard key={review.id} review={review} />);
   const reviewEditor = reviewAccountKey === app.ref ? <Column verticalArrangement={{spacedBy:8}}>
-    <Row horizontalArrangement={{spacedBy:4}}>{reviewStarButtons}</Row>
+    <StarRow selected={reviewStars} enabled={!reviewBusy} onPick={setReviewStars} />
     <OutlinedTextField value={titleNative} singleLine onValueChange={(value) => titleNative.set(value)}><OutlinedTextField.Label>Title (optional)</OutlinedTextField.Label></OutlinedTextField>
     <OutlinedTextField value={bodyNative} onValueChange={(value) => bodyNative.set(value)}><OutlinedTextField.Label>Your review</OutlinedTextField.Label></OutlinedTextField>
     <Row horizontalArrangement={{spacedBy:8}}><Button enabled={!reviewBusy} onClick={() => void sendReview()}><Text>{reviewBusy ? "Sending…" : "Send"}</Text></Button><Show when={Boolean(myReview)}><Button enabled={!reviewBusy} onClick={() => void removeOwnReview()}><Text>Delete</Text></Button></Show></Row>
@@ -228,15 +236,15 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     {progressPanel(progress, percent, busy, canCancel, onCancel)}
     <Show when={Boolean(error)}><Text style={{ typography: "bodyMedium" }} color="#b3261e">{error}</Text></Show>
     <RatingStars app={app} installed={installed} onRate={onRate} />
-    <Host matchContents={{vertical:true}} style={{width:"100%"}}><Column verticalArrangement={{spacedBy:8}}>
+    <Column verticalArrangement={{spacedBy:8}}>
       <Text style={{typography:"titleLarge"}}>Write a review</Text>
       {reviewEditor}
-      {reviewError ? <Text style={{typography:"bodySmall"}} color="#b3261e">{reviewError}</Text> : null}
+      <ErrorNote message={reviewError} />
       <Text style={{typography:"titleLarge"}}>Reviews</Text>
-      {reviews.length === 0 && !reviewError ? <Text>No reviews yet</Text> : null}
+      <Show when={reviews.length === 0 && !reviewError}><Text>No reviews yet</Text></Show>
       {reviewCards}
-      {hasMoreReviews ? <Button onClick={() => void loadMoreReviews()}><Text>Load more</Text></Button> : null}
-    </Column></Host>
+      <Show when={hasMoreReviews}><Button onClick={() => void loadMoreReviews()}><Text>Load more</Text></Button></Show>
+    </Column>
     <ScreenshotStrip app={app} />
     <Row horizontalArrangement={{ spacedBy: 8 }}>
       <Button onClick={() => setTab("details")}><Text>Details</Text></Button>

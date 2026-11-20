@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { Button, Column, Host, Row, Text } from "@expo/ui/jetpack-compose";
+import { Column, IconButton, Row, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { weight } from "@expo/ui/jetpack-compose/modifiers";
 import { MatonOS } from "../../modules/matonos-software/src/MatonOS";
 import type { StoreApp } from "../sources/Source";
 import { appRatingKey } from "../sources/ratings";
-import { MaterialSymbol } from "../components/MaterialSymbol";
 import { beginRating, failRating, finishRating, initialRatingState, shownRating, type RatingState } from "./ratingState";
 
 function ratingKey(app: StoreApp): string {
@@ -17,12 +16,22 @@ function validRating(value: string | null): number | null {
   return Number.isInteger(stars) && stars >= 1 && stars <= 5 ? stars : null;
 }
 
-function RatingButtons({ state, enabled, onRate }: { state: RatingState; enabled: boolean; onRate: (stars: number) => void }) {
-  const selected = shownRating(state);
-  const buttons = [1, 2, 3, 4, 5].map((stars) => <Button key={stars} enabled={enabled && state.pending === null} onClick={() => onRate(stars)}>
-    <MaterialSymbol name={stars <= selected ? "star" : "star_outline"} size={28} description={`${stars} stars`} />
-  </Button>);
-  return <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 2 }}>{buttons}</Row>;
+export function StarButton({ stars, filled, enabled, onClick }: { stars: number; filled: boolean; enabled: boolean; onClick: (stars: number) => void }) {
+  const colors = useMaterialColors();
+  return <IconButton enabled={enabled} onClick={() => onClick(stars)}>
+    <Text style={{ typography: "headlineSmall" }} color={filled ? colors.primary : colors.onSurfaceVariant}>{filled ? "★" : "☆"}</Text>
+  </IconButton>;
+}
+
+export function StarRow({ selected, enabled, onPick }: { selected: number; enabled: boolean; onPick: (stars: number) => void }) {
+  const buttons = [1, 2, 3, 4, 5].map((stars) => <StarButton key={stars} stars={stars} filled={stars <= selected} enabled={enabled} onClick={onPick} />);
+  return <Row verticalAlignment="center">{buttons}</Row>;
+}
+
+function RatingNote({ state }: { state: RatingState }) {
+  if (state.pending !== null) return <Text style={{ typography: "bodySmall" }}>Saving…</Text>;
+  if (state.error) return <Text style={{ typography: "bodySmall" }} color="#b3261e">{state.error}</Text>;
+  return null;
 }
 
 export function RatingStars({ app, installed, onRate }: { app: StoreApp; installed: boolean; onRate: (stars: number) => Promise<void> }) {
@@ -51,14 +60,12 @@ export function RatingStars({ app, installed, onRate }: { app: StoreApp; install
     }
   }
 
-  return <Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
-    <Column verticalArrangement={{ spacedBy: 2 }}>
-      <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 12 }}>
-        <Text style={{ typography: "titleMedium" }} modifiers={[weight(1)]}>Rate this app</Text>
-        <RatingButtons state={state} enabled={installed} onRate={(stars) => void submit(stars)} />
-        {state.pending !== null ? <Text style={{ typography: "bodySmall" }}>Saving…</Text> : null}
-        {state.error ? <Text style={{ typography: "bodySmall" }} color="#b3261e">{state.error}</Text> : null}
-      </Row>
-    </Column>
-  </Host>;
+  // Rendered inside the detail page's Compose tree: no Host of its own.
+  return <Column verticalArrangement={{ spacedBy: 2 }}>
+    <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 12 }}>
+      <Text style={{ typography: "titleMedium" }} modifiers={[weight(1)]}>Rate this app</Text>
+      <StarRow selected={shownRating(state)} enabled={installed && state.pending === null} onPick={(stars) => void submit(stars)} />
+    </Row>
+    <RatingNote state={state} />
+  </Column>;
 }
