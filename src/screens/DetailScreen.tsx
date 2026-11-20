@@ -101,18 +101,21 @@ function safetySection(app: StoreApp) {
   </Column>;
 }
 
+// Rendered after the page Host as React Native siblings: the Markdown view is not a Compose
+// node, and a Host must not sit inside another Host's Compose tree.
 function tabDetails(app: StoreApp, markdown: string, colors: ReturnType<typeof useMaterialColors>, openLink: (event: { url: string }) => void) {
-  return <Column verticalArrangement={{ spacedBy: 14 }}>
-    <Text style={{ typography: "titleMedium" }}>About this app</Text>
+  return <>
     <EnrichedMarkdownText markdown={markdown} flavor="commonmark" selectable onLinkPress={openLink}
     markdownStyle={{ paragraph: { fontSize: 14, color: colors.onSurface, lineHeight: 21, marginBottom: 12 },
       h1: { color: colors.onSurface }, h2: { color: colors.onSurface }, h3: { color: colors.onSurface },
       list: { color: colors.onSurface, itemSpacing: 5 }, link: { color: colors.primary } }} />
-    <ScreenshotStrip app={app} />
-    <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><DetailFacts app={app} /></Host>
-    {safetySection(app)}
-    <Text style={{ typography: "bodySmall" }}>{`Package name: ${app.packageName}`}</Text>
-  </Column>;
+    <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><Column verticalArrangement={{ spacedBy: 14 }}>
+      <ScreenshotStrip app={app} />
+      <DetailFacts app={app} />
+      {safetySection(app)}
+      <Text style={{ typography: "bodySmall" }}>{`Package name: ${app.packageName}`}</Text>
+    </Column></Host>
+  </>;
 }
 
 function actionButtonLabel(busy: boolean, busyLabel: string, updateAvailable: boolean, installed: boolean): string {
@@ -269,9 +272,10 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     <Show when={Boolean(error)}><Text style={{ typography: "bodyMedium" }} color="#b3261e">{error}</Text></Show>
     <RatingStars app={app} installed={installed} onRate={onRate} />
     <TabBar tab={tab} setTab={setTab} />
-    {tab === "details" ? tabDetails(app, markdown, colors, openLink) : null}
-    {tab === "permissions" ? <PermissionList app={app} /> : null}
-    {tab === "reviews" ? reviewsContent : null}
+    <Show when={tab === "details"}><Text style={{ typography: "titleMedium" }}>About this app</Text></Show>
+    <Show when={tab === "permissions"}><PermissionList app={app} /></Show>
+    <Show when={tab === "reviews"}>{reviewsContent}</Show>
     </Column></Host>
+    {tab === "details" ? tabDetails(app, markdown, colors, openLink) : null}
   </ScrollView>;
 }
