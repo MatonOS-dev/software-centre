@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Linking, ScrollView } from "react-native";
 import { EnrichedMarkdownText } from "react-native-enriched-markdown";
 import { FlatList, View } from "react-native";
-import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, LinearProgressIndicator, OutlinedTextField, Row, SegmentedButton, Spacer, SingleChoiceSegmentedButtonRow, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
+import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, HorizontalDivider, RNHostView, LinearProgressIndicator, OutlinedTextField, Row, SegmentedButton, Spacer, SingleChoiceSegmentedButtonRow, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, height, padding, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import type { StoreApp } from "../sources/Source";
 import { PermissionList } from "../components/PermissionList";
@@ -73,7 +73,7 @@ function TabBar({ tab, setTab }: { tab: Tab; setTab: (tab: Tab) => void }) {
     { id: "details", label: "Details" }, { id: "permissions", label: "Permissions" }, { id: "reviews", label: "Reviews" },
   ];
   const items = tabs.map((item) => <SegmentedButton key={item.id} selected={tab === item.id} onClick={() => setTab(item.id)}>
-    <SegmentedButton.Label>{item.label}</SegmentedButton.Label>
+    <SegmentedButton.Label><Text>{item.label}</Text></SegmentedButton.Label>
   </SegmentedButton>);
   return <SingleChoiceSegmentedButtonRow>{items}</SingleChoiceSegmentedButtonRow>;
 }
@@ -101,21 +101,18 @@ function safetySection(app: StoreApp) {
   </Column>;
 }
 
-// Rendered after the page Host as React Native siblings: the Markdown view is not a Compose
-// node, and a Host must not sit inside another Host's Compose tree.
+// React Native views (Markdown, screenshot list) sit in RNHostView; a Host never nests in a Host.
 function tabDetails(app: StoreApp, markdown: string, colors: ReturnType<typeof useMaterialColors>, openLink: (event: { url: string }) => void) {
-  return <>
-    <EnrichedMarkdownText markdown={markdown} flavor="commonmark" selectable onLinkPress={openLink}
+  return <Column verticalArrangement={{ spacedBy: 14 }}>
+    <RNHostView matchContents><View style={{ width: "100%" }}><EnrichedMarkdownText markdown={markdown} flavor="commonmark" selectable onLinkPress={openLink}
     markdownStyle={{ paragraph: { fontSize: 14, color: colors.onSurface, lineHeight: 21, marginBottom: 12 },
       h1: { color: colors.onSurface }, h2: { color: colors.onSurface }, h3: { color: colors.onSurface },
-      list: { color: colors.onSurface, itemSpacing: 5 }, link: { color: colors.primary } }} />
-    <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><Column verticalArrangement={{ spacedBy: 14 }}>
+      list: { color: colors.onSurface, itemSpacing: 5 }, link: { color: colors.primary } }} /></View></RNHostView>
       <ScreenshotStrip app={app} />
       <DetailFacts app={app} />
       {safetySection(app)}
       <Text style={{ typography: "bodySmall" }}>{`Package name: ${app.packageName}`}</Text>
-    </Column></Host>
-  </>;
+  </Column>;
 }
 
 function actionButtonLabel(busy: boolean, busyLabel: string, updateAvailable: boolean, installed: boolean): string {
@@ -135,7 +132,7 @@ function ScreenshotStrip({ app }: { app: StoreApp }) {
   const screenshots = app.screenshots.map((src, index) => screenshotItem(app, src, index));
   return <Column verticalArrangement={{ spacedBy: 8 }}>
     <Text style={{ typography: "titleMedium" }}>Screenshots</Text>
-    <View style={{ height: 349 }}><FlatList removeClippedSubviews={false} horizontal data={screenshots} keyExtractor={(_, index) => `${app.id}-screenshot-${index}`} renderItem={({ item }) => item} /></View>
+    <RNHostView matchContents><View style={{ height: 349, width: "100%" }}><FlatList removeClippedSubviews={false} horizontal data={screenshots} keyExtractor={(_, index) => `${app.id}-screenshot-${index}`} renderItem={({ item }) => item} /></View></RNHostView>
   </Column>;
 }
 
@@ -264,9 +261,9 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
       <RemoveButton installed={installed} busy={busy} onRemove={onRemove} />
       <RepositoryMenu options={repoOptions} selectedRepository={selectedRepository} expanded={sourceMenuOpen} setExpanded={setSourceMenuOpen} onChoose={onChooseRepository} />
     </Row>
-    <View style={{ height: 1, backgroundColor: colors.outlineVariant }} />
+    <HorizontalDivider />
     {appBar}
-    <View style={{ height: 1, backgroundColor: colors.outlineVariant }} />
+    <HorizontalDivider />
     {selectedRepositoryNote(selectedRepository?.note)}
     {progressPanel(progress, percent, busy, canCancel, onCancel)}
     <Show when={Boolean(error)}><Text style={{ typography: "bodyMedium" }} color="#b3261e">{error}</Text></Show>
@@ -274,8 +271,8 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     <TabBar tab={tab} setTab={setTab} />
     <Show when={tab === "details"}><Text style={{ typography: "titleMedium" }}>About this app</Text></Show>
     <Show when={tab === "permissions"}><PermissionList app={app} /></Show>
+    <Show when={tab === "details"}>{tabDetails(app, markdown, colors, openLink)}</Show>
     <Show when={tab === "reviews"}>{reviewsContent}</Show>
     </Column></Host>
-    {tab === "details" ? tabDetails(app, markdown, colors, openLink) : null}
   </ScrollView>;
 }
