@@ -22,7 +22,7 @@ final class CatalogueIndex extends SQLiteOpenHelper {
     db.execSQL("CREATE TABLE apps(source TEXT NOT NULL,id TEXT NOT NULL,repo TEXT NOT NULL,name TEXT,summary TEXT,icon TEXT,developer TEXT,added INTEGER,popularity REAL,installed INTEGER,updates INTEGER,installable INTEGER,repo_priority INTEGER,repo_label TEXT,raw TEXT NOT NULL,PRIMARY KEY(source,id,repo))");
     db.execSQL("CREATE VIRTUAL TABLE apps_fts USING fts4(source,id,repo,name,summary,tokenize=unicode61)");
     db.execSQL("CREATE TABLE generations(source TEXT PRIMARY KEY,generation INTEGER NOT NULL)");
-    db.execSQL("CREATE INDEX apps_source_added ON apps(source,added DESC)");db.execSQL("CREATE INDEX apps_source_popular ON apps(source,popularity DESC)");
+    db.execSQL("CREATE INDEX apps_source_id ON apps(source,id)");db.execSQL("CREATE INDEX apps_source_added ON apps(source,added DESC)");db.execSQL("CREATE INDEX apps_source_popular ON apps(source,popularity DESC)");
   }
   @Override public void onUpgrade(SQLiteDatabase db,int oldVersion,int newVersion){throw new IllegalStateException("Unsupported store catalogue DB upgrade "+oldVersion+" -> "+newVersion);}
 
@@ -61,10 +61,13 @@ final class CatalogueIndex extends SQLiteOpenHelper {
   }
   synchronized String query(String source,String kind,String term,int offset,int limit)throws Exception{
     if(offset<0||limit<1)throw new IllegalArgumentException("offset must be non-negative and limit positive");
-    SQLiteDatabase db=getReadableDatabase();String selection="a.source=?",order="a.name COLLATE NOCASE,a.repo";String[] args;
+    SQLiteDatabase db=getReadableDatabase();String selection="a.source=? AND a.rowid=(SELECT b.rowid FROM apps b WHERE b.source=a.source AND b.id=a.id ORDER BY b.installable DESC,b.repo_priority DESC,b.repo_label COLLATE NOCASE LIMIT 1)",order="a.name COLLATE NOCASE,a.repo";String[] args;
     if("search".equals(kind)&&term!=null&&!term.trim().isEmpty()){
-      // FTS expression is quoted so user punctuation cannot become FTS syntax.
-      String escaped='"'+term.trim().replace("\"","\"\"")+'"';selection+=" AND a.rowid IN (SELECT rowid FROM apps_fts WHERE apps_fts MATCH ? AND source=?)";args=new String[]{source,escaped,source};
+      // Each word is a quoted prefix token ("ari*"), so user punctuation cannot become FTS
+      // syntax and partial words match while typing.
+      StringBuilder fts=new StringBuilder();
+      for(String word:term.trim().split("\\s+")){if(fts.length()>0)fts.append(' ');fts.append('"').append(word.replace("\"","\"\"")).append("*\"");}
+      String escaped=fts.toString();selection+=" AND a.rowid IN (SELECT rowid FROM apps_fts WHERE apps_fts MATCH ? AND source=?)";args=new String[]{source,escaped,source};
     }else args=new String[]{source};
     if("popular".equals(kind))order="a.popularity DESC,a.name COLLATE NOCASE";
     else if("new".equals(kind))order="a.added DESC,a.name COLLATE NOCASE";
