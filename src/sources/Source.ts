@@ -97,7 +97,7 @@ export interface Source {
   readonly name: SourceName;
   readonly label?: string;
   readonly capabilities?: string[];
-  search(query: string): Promise<StoreApp[]>;
+  searchPage(query: string, offset: number, limit: number): Promise<{ apps: StoreApp[]; hasMore: boolean }>;
   collection(kind: "popular" | "new", offset: number, limit: number): Promise<StoreApp[]>;
   getPopularApps?(limit: number): Promise<ScoredApp[]>;
   details(app: StoreApp): Promise<StoreApp>;

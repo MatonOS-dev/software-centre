@@ -61,7 +61,10 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
     Promise.all((await pages<PluginApp>(getter, pkg, call)).map(decorate));
   return {
     name: pkg, label, capabilities,
-    async search(term) { return groupCandidates(pkg, await list("search", (offset, limit) => MatonOS.sourceSearch(pkg, term, offset, limit))); },
+    async searchPage(term, offset, limit) {
+      const page = parse<PluginApp[]>(pkg, "search", await MatonOS.sourceSearch(pkg, term, offset, limit));
+      return { apps: groupCandidates(pkg, await Promise.all(page.map(decorate))), hasMore: page.length === limit };
+    },
     async collection(kind, offset, limit) {
       if (!hasRevision(version, revision, 2)) return [];
       const page = parse<PluginApp[]>(pkg, "collection", await MatonOS.sourceCollection(pkg, kind, offset, limit));

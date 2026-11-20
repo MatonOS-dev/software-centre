@@ -87,7 +87,10 @@ export default function App() {
   const [sourceIcons, setSourceIcons] = useState<Record<string, string>>({});
   const collectionRequestId = useRef(0);
   const searchRequestId = useRef(0);
+  const searchScrollStarted = useRef(false);
+  const searchPages = useRef(new Map<string, { offset: number; hasMore: boolean; inFlight: boolean }>());
   const searchDispatch = useRef<(query: string) => void>(() => {});
+  const searchFetchMore = useRef<((source: string) => void) | null>(null);
   const searchController = useRef<DebouncedSearch | null>(null);
   if (!searchController.current) searchController.current = new DebouncedSearch((query) => searchDispatch.current(query));
   const refreshes = useRef(new Map<string, Promise<void>>());
@@ -210,31 +213,56 @@ export default function App() {
     setLoading(true); setMessage("");
     const perSource: StoreApp[][] = sources.map(() => []);
     const errors: Array<{ source: string; message: string }> = [];
-    let remaining = sources.length;
-    let receivedFirstAnswer = false;
+    searchPages.current.clear();
+    searchScrollStarted.current = false;
+    for (const source of sources) searchPages.current.set(`${request}:${source.name}`, { offset: 0, hasMore: true, inFlight: false });
     const publish = () => {
       if (request !== searchRequestId.current) return;
       setApps(rankSearchResults(perSource, query));
       setSearchErrors([...errors]);
     };
-    if (remaining === 0) setLoading(false);
-    sources.forEach((source, index) => {
-      source.search(query).then((results) => {
-        perSource[index] = results;
+    if (sources.length === 0) setLoading(false);
+    const fetchPage = (source: (typeof sources)[number], index: number) => {
+      const key = `${request}:${source.name}`;
+      const state = searchPages.current.get(key);
+      if (!state || state.inFlight || !state.hasMore || request !== searchRequestId.current) return;
+      state.inFlight = true;
+      const offset = state.offset;
+      source.searchPage(query, offset, 100).then(({ apps: results, hasMore }) => {
+        if (request !== searchRequestId.current) return;
+        state.offset += 100;
+        state.hasMore = hasMore;
+        perSource[index] = mergeSearchPage(perSource[index], results);
         publish();
       }).catch((error: unknown) => {
-        console.error(`${source.name}: search failed`, error);
+        if (request !== searchRequestId.current) return;
+        console.error(`${source.name}: search page failed`, error);
         errors.push({ source: source.label ?? source.name, message: errorText(error) });
+        state.hasMore = false;
         publish();
       }).finally(() => {
-        remaining -= 1;
-        if (!receivedFirstAnswer && request === searchRequestId.current) {
-          receivedFirstAnswer = true;
-          setLoading(false);
-        }
-        if (remaining === 0 && request === searchRequestId.current) setLoading(false);
+        state.inFlight = false;
+        if (request === searchRequestId.current) setLoading(false);
       });
-    });
+    };
+    sources.forEach(fetchPage);
+    searchFetchMore.current = (name) => {
+      const index = sources.findIndex((source) => source.name === name);
+      if (index >= 0) fetchPage(sources[index], index);
+    };
+  }
+
+  function mergeSearchPage(existing: StoreApp[], incoming: StoreApp[]): StoreApp[] {
+    const merged = [...existing];
+    for (const app of incoming) {
+      const index = merged.findIndex((entry) => entry.source === app.source && entry.id === app.id);
+      if (index < 0) { merged.push(app); continue; }
+      const current = merged[index];
+      const candidates = [...(current.candidates ?? [current]), ...(app.candidates ?? [app])];
+      const options = new Map([...(current.repoOptions ?? []), ...(app.repoOptions ?? [])].map((option) => [option.repoId, option]));
+      merged[index] = { ...current, candidates, repoOptions: [...options.values()] };
+    }
+    return merged;
   }
 
   searchDispatch.current = executeSearch;
@@ -247,12 +275,16 @@ export default function App() {
       const changed = searchController.current?.schedule("") ?? false;
       if (!changed) return;
       searchRequestId.current += 1;
+      searchPages.current.clear();
+      searchScrollStarted.current = false;
       setLoading(false);
       void loadCollections();
       return;
     }
     if (searchController.current?.schedule(query)) {
       searchRequestId.current += 1;
+      searchPages.current.clear();
+      searchScrollStarted.current = false;
       setLoading(true);
       setMessage("");
       setSearchErrors([]);
@@ -456,6 +488,15 @@ export default function App() {
         <Show when={loading}><Text modifiers={[paddingAll(16)]}>Searching…</Text></Show>
       </Host>
       <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={apps} renderItem={renderApp} keyExtractor={keyApp}
+        onScrollBeginDrag={() => { searchScrollStarted.current = true; }}
+        onEndReached={() => { if (!searchScrollStarted.current) return; sources.forEach((source) => {
+          const request = searchRequestId.current;
+          const state = searchPages.current.get(`${request}:${source.name}`);
+          if (state?.hasMore && !state.inFlight) {
+            searchFetchMore.current?.(source.name);
+          }
+        }); }}
+        onEndReachedThreshold={0.5}
         ListEmptyComponent={searchEmptyState(loading, searchErrors, message)} />
       {searchErrorRows}
     </View>;

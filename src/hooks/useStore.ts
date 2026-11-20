@@ -50,7 +50,7 @@ async function installed(): Promise<Set<string>> {
 }
 
 async function searchSource(source: Source, term: string, ids: Set<string>): Promise<AppListing[]> {
-  const found = await source.search(term);
+  const { apps: found } = await source.searchPage(term, 0, 100);
   const rated = source.ratings ? await source.ratings(found).catch((error) => {
     console.warn(`${source.name}: ratings unavailable`, error);
     return found;
