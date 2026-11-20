@@ -158,7 +158,6 @@ export default function App() {
       void attachRatings(rows).then((rated) => {
         if (request !== collectionRequestId.current) return;
         setPopularApps(rated); setCollectionLoading((state) => ({ ...state, popular: false }));
-        void MatonOS.setBrowseCache("popular-score-v2", JSON.stringify(rated)).catch((error) => console.warn("Writing Popular browse cache failed", error));
       });
     };
     const publishNew = () => {
@@ -168,20 +167,8 @@ export default function App() {
       void attachRatings(rows).then((rated) => {
         if (request !== collectionRequestId.current) return;
         setNewApps(rated); setCollectionLoading((state) => ({ ...state, new: false }));
-        void MatonOS.setBrowseCache("new", JSON.stringify(rated)).catch((error) => console.warn("Writing New browse cache failed", error));
       });
     };
-    // Popular is versioned because its ordering comes from plugin scores; do not
-    // show a persisted collection from a prior scoring implementation as current.
-    const caches = ["popular-score-v2", "new"].map(async (key) => {
-      try {
-        const cached = await MatonOS.getBrowseCache(key);
-        if (!cached || request !== collectionRequestId.current) return;
-        const rows = await attachRatings(JSON.parse(cached) as StoreApp[]);
-        if (key === "popular-score-v2" && !popularReceived) setPopularApps(rows);
-        if (key === "new" && !newReceived) setNewApps(rows);
-      } catch (error) { console.warn(`Reading ${key} browse cache failed`, error); }
-    });
     const tasks = sources.flatMap((source, index) => [
       (async () => {
         try {
@@ -206,7 +193,7 @@ export default function App() {
         }
       })(),
     ]);
-    await Promise.allSettled([...caches, ...tasks]);
+    await Promise.allSettled(tasks);
     if (request === collectionRequestId.current) {
       if (!popularReceived) { setPopularApps([]); setCollectionLoading((state) => ({ ...state, popular: false })); }
       if (!newReceived) { setNewApps([]); setCollectionLoading((state) => ({ ...state, new: false })); }

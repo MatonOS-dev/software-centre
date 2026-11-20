@@ -56,15 +56,8 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("setSourceEnabled") { pkg: String, enabled: Boolean -> requirePlugins().setEnabled(pkg, enabled) }
     AsyncFunction("sourceInfo") { pkg: String -> json.toJson(sourceCall(pkg) { it.info() }) }.runOnQueue(sourceCallQueue)
     AsyncFunction("sourceUnavailableOwners") { json.toJson(requirePlugins().unavailableOwners()) }
-    AsyncFunction("sourceSearch") { pkg: String, term: String, offset: Int, limit: Int ->
-      val rows = sourceCall(pkg) { it.search(term, offset, limit) }; applyStoredOrigins(pkg, rows); json.toJson(rows)
-    }.runOnQueue(sourceCallQueue)
-    AsyncFunction("sourceCollection") { pkg: String, kind: String, offset: Int, limit: Int ->
-      val rows = sourceCall(pkg) { it.collection(kind, offset, limit) }; applyStoredOrigins(pkg, rows); json.toJson(rows)
-    }.runOnQueue(sourceCallQueue)
-    AsyncFunction("sourcePopularApps") { pkg: String, limit: Int ->
-      val rows = sourceCall(pkg) { it.getPopularApps(limit) }; applyStoredOrigins(pkg, rows.map { it.app }.toTypedArray()); json.toJson(rows)
-    }.runOnQueue(sourceCallQueue)
+    AsyncFunction("sourceQuery") { pkg: String, kind: String, term: String, offset: Int, limit: Int -> requirePlugins().query(pkg, kind, term, offset, limit) }.runOnQueue(sourceCallQueue)
+    AsyncFunction("sourceRepositories") { pkg: String -> requirePlugins().repositories(pkg) }.runOnQueue(sourceCallQueue)
     AsyncFunction("sourceSettings") { pkg: String -> json.toJson(sourceCall(pkg) { it.settings() }) }.runOnQueue(sourceCallQueue)
     AsyncFunction("sourceSetSetting") { pkg: String, id: String, value: String? -> sourceCall(pkg) { it.setSetting(id, value) } }.runOnQueue(sourceCallQueue)
     AsyncFunction("sourceRunAction") { pkg: String, id: String, values: List<String>, confirmed: Boolean ->
@@ -127,12 +120,6 @@ class MatonOSExpoModule : Module() {
       val details = sourceCall(pkg) { it.details(id, repo) }; applyStoredOrigins(pkg, arrayOf(details.listing)); json.toJson(details)
     }.runOnQueue(sourceCallQueue)
     AsyncFunction("sourceReviews") { pkg: String, id: String, offset: Int, limit: Int -> json.toJson(sourceCall(pkg) { it.reviews(id, offset, limit) }) }.runOnQueue(sourceCallQueue)
-    AsyncFunction("sourceInstalled") { pkg: String, offset: Int, limit: Int ->
-      val rows = sourceCall(pkg) { it.installed(offset, limit) }; applyStoredOrigins(pkg, rows); json.toJson(rows)
-    }.runOnQueue(sourceCallQueue)
-    AsyncFunction("sourceUpdates") { pkg: String, offset: Int, limit: Int ->
-      val rows = sourceCall(pkg) { it.updates(offset, limit) }; applyStoredOrigins(pkg, rows); json.toJson(rows)
-    }.runOnQueue(sourceCallQueue)
     AsyncFunction("sourceInstall") { pkg: String, id: String, repo: String, operationId: String -> requirePlugins().install(pkg, id, repo, operationId) }
     AsyncFunction("sourceCancel") { pkg: String, operationId: String -> requirePlugins().cancel(pkg, operationId) }
     AsyncFunction("sourceRunning") { pkg: String, operationId: String -> requirePlugins().running(pkg, operationId) }

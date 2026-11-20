@@ -51,6 +51,7 @@ public final class SourcePlugins {
   }
 
   private final Context context;
+  private final CatalogueIndex catalogueIndex;
   private final Events events;
   private final Map<String, Connection> connections = new ConcurrentHashMap<>();
   private final Map<String, Object> connectionLocks = new ConcurrentHashMap<>();
@@ -122,6 +123,7 @@ public final class SourcePlugins {
   public SourcePlugins(Context context, Events events) {
     this.context = context.getApplicationContext();
     this.events = events;
+    this.catalogueIndex = new CatalogueIndex(this.context);
   }
 
   /** Every installed plugin service that requires the store's bind permission. */
@@ -176,6 +178,19 @@ public final class SourcePlugins {
       }
       return ISoftwareSource.Stub.asInterface(connection.binder);
     }
+  }
+
+  public String query(String pkg,String kind,String term,int offset,int limit) throws Exception {
+    ISoftwareSource plugin=source(pkg);
+    ParcelFileDescriptor catalogue=plugin.catalogue();long version=plugin.catalogueVersion();
+    catalogueIndex.importIfChanged(pkg,version,catalogue);
+    return catalogueIndex.query(pkg,kind,term,offset,limit);
+  }
+  public String repositories(String pkg) throws Exception {
+    ISoftwareSource plugin=source(pkg);
+    ParcelFileDescriptor catalogue=plugin.catalogue();long version=plugin.catalogueVersion();
+    catalogueIndex.importIfChanged(pkg,version,catalogue);
+    return catalogueIndex.repositories(pkg);
   }
 
   public void install(String pkg, String id, String repo, String operationId) throws Exception {
@@ -321,6 +336,7 @@ public final class SourcePlugins {
 
   public void close() {
     for (String pkg : new ArrayList<>(connections.keySet())) disconnect(pkg);
+    catalogueIndex.close();
   }
 
   private void disconnect(String pkg) {

@@ -1,8 +1,8 @@
 import { MatonOS, type SourcePlugin } from "../../modules/matonos-software/src/MatonOS";
 import type { ScoredApp, Source, SourceProgress, StoreApp } from "./Source";
 
-const CONTRACT_VERSION = 4;
-const POPULAR_REVISION = 3;
+const CONTRACT_VERSION = 5;
+
 const CAPABILITIES = ["", "HAS_AGE_RATINGS", "HAS_REVIEWS", "HAS_ANTI_FEATURES", "HAS_PERMISSIONS", "", "REQUIRES_SETUP"];
 const PAGE = 100;
 export type SourceInfo = { version: number; revision: number; name: string; label: string; description?: string; capabilities: string[] };
@@ -51,12 +51,7 @@ function groupCandidates(plugin: string, apps: StoreApp[]): StoreApp[] {
     return { ...first, candidates, repoOptions };
   });
 }
-// Revision gates count within API version 2; any later API version includes all of them.
-function hasRevision(version: number, revision: number, minimum: number): boolean {
-  return version > 2 || revision >= minimum;
-}
-
-export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], label = plugin.label, revision = 0, version = 2): Source {
+export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], label = plugin.label): Source {
   const pkg = plugin.package;
   const decorate = async (app: PluginApp) => toApp(pkg, app, label);
   const list = async (call: string, getter: (offset: number, limit: number) => Promise<string>) =>
@@ -64,21 +59,16 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
   return {
     name: pkg, label, capabilities,
     async searchPage(term, offset, limit) {
-      const page = parse<PluginApp[]>(pkg, "search", await MatonOS.sourceSearch(pkg, term, offset, limit));
+      const page = parse<PluginApp[]>(pkg, "search", await MatonOS.sourceQuery(pkg, "search", term, offset, limit));
       return { apps: groupCandidates(pkg, await Promise.all(page.map(decorate))), hasMore: page.length === limit };
     },
     async collection(kind, offset, limit) {
-      if (!hasRevision(version, revision, 2)) return [];
-      const page = parse<PluginApp[]>(pkg, "collection", await MatonOS.sourceCollection(pkg, kind, offset, limit));
+      const page = parse<PluginApp[]>(pkg, "collection", await MatonOS.sourceQuery(pkg, kind, "", offset, limit));
       return groupCandidates(pkg, await Promise.all(page.map(decorate)));
     },
     async getPopularApps(limit): Promise<ScoredApp[]> {
-      if (!hasRevision(version, revision, POPULAR_REVISION)) {
-        console.error(`${pkg}: popular apps skipped; source contract ${version}.${revision} has no scored popularity call`);
-        return [];
-      }
-      const rows = parse<Array<{ app: PluginApp; score: number }>>(pkg, "popularApps", await MatonOS.sourcePopularApps(pkg, limit));
-      return Promise.all(rows.map(async ({ app, score }) => ({ app: await decorate(app), score })));
+      const rows = parse<PluginApp[]>(pkg, "popularApps", await MatonOS.sourceQuery(pkg, "popular", "", 0, limit));
+      return Promise.all(rows.map(async (app) => ({ app: await decorate(app), score: Number(app.popularityScore ?? 0) })));
     },
     async details(app) {
       const { listing, ...details } = parse<PluginApp & { listing: PluginApp }>(pkg, "details", await MatonOS.sourceDetails(pkg, app.id, app.repo ?? "1"));
@@ -88,8 +78,8 @@ export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], 
       const result = toApp(pkg, { ...listing, ...details, repo: app.repo ?? listing.repo, repoOptions }, label);
       return result;
     },
-    installed: () => list("installed", (offset, limit) => MatonOS.sourceInstalled(pkg, offset, limit)),
-    updates: () => list("updates", (offset, limit) => MatonOS.sourceUpdates(pkg, offset, limit)),
+    installed: () => list("installed", (offset, limit) => MatonOS.sourceQuery(pkg, "installed", "", offset, limit)),
+    updates: () => list("updates", (offset, limit) => MatonOS.sourceQuery(pkg, "updates", "", offset, limit)),
     install: (app, operationId) => MatonOS.sourceInstall(pkg, app.id, app.repo ?? "1", operationId),
     uninstall: (app, operationId) => MatonOS.sourceUninstall(pkg, app.packageName ?? app.id, operationId),
     cancel: (operationId) => MatonOS.sourceCancel(pkg, operationId),
@@ -104,7 +94,7 @@ export async function pluginSources(): Promise<Source[]> {
     try {
       const info = sourceInfo(plugin.package, await MatonOS.sourceInfo(plugin.package));
       if (info.version !== CONTRACT_VERSION) throw new Error(`speaks contract ${info.version}, store speaks ${CONTRACT_VERSION}`);
-      return pluginSource(plugin, info.capabilities, info.label, info.revision, info.version);
+      return pluginSource(plugin, info.capabilities, info.label);
     } catch (error) { console.error(`Store source ${plugin.package} unusable`, error); return null; }
   }));
   return checked.filter((source): source is Source => source !== null);

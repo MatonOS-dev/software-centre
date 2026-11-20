@@ -10,9 +10,8 @@ type NativeApi = {
   sourceUnavailableOwners(): Promise<string>;
   setSourceEnabled(pkg: string, enabled: boolean): Promise<void>;
   sourceInfo(pkg: string): Promise<string>;
-  sourceSearch(pkg: string, term: string, offset: number, limit: number): Promise<string>;
-  sourceCollection(pkg: string, kind: "popular" | "new", offset: number, limit: number): Promise<string>;
-  sourcePopularApps(pkg: string, limit: number): Promise<string>;
+  sourceQuery(pkg: string, kind: string, term: string, offset: number, limit: number): Promise<string>;
+  sourceRepositories(pkg: string): Promise<string>;
   sourceSettings(pkg: string): Promise<string>;
   sourceSetSetting(pkg: string, id: string, value: string | null): Promise<string | null>;
   sourceRunAction(pkg: string, id: string, values: string[], confirmed: boolean): Promise<string>;
@@ -21,8 +20,6 @@ type NativeApi = {
   launchAndroidApp(packageName: string): Promise<boolean>;
   sourceDetails(pkg: string, id: string, repo: string): Promise<string>;
   sourceReviews(pkg: string, id: string, offset: number, limit: number): Promise<string>;
-  sourceInstalled(pkg: string, offset: number, limit: number): Promise<string>;
-  sourceUpdates(pkg: string, offset: number, limit: number): Promise<string>;
   sourceInstall(pkg: string, id: string, repo: string, operationId: string): Promise<void>;
   sourceCancel(pkg: string, operationId: string): Promise<void>;
   sourceRunning(pkg: string, operationId: string): Promise<boolean>;
@@ -42,9 +39,8 @@ export const MatonOS = {
   sourceUnavailableOwners: () => Native.sourceUnavailableOwners(),
   setSourceEnabled: (pkg: string, enabled: boolean) => Native.setSourceEnabled(pkg, enabled),
   sourceInfo: (pkg: string) => Native.sourceInfo(pkg),
-  sourceSearch: (pkg: string, term: string, offset: number, limit: number) => Native.sourceSearch(pkg, term, offset, limit),
-  sourceCollection: (pkg: string, kind: "popular" | "new", offset: number, limit: number) => Native.sourceCollection(pkg, kind, offset, limit),
-  sourcePopularApps: (pkg: string, limit: number) => Native.sourcePopularApps(pkg, limit),
+  sourceQuery: (pkg: string, kind: string, term: string, offset: number, limit: number) => Native.sourceQuery(pkg, kind, term, offset, limit),
+  sourceRepositories: (pkg: string) => Native.sourceRepositories(pkg),
   sourceSettings: (pkg: string) => Native.sourceSettings(pkg),
   sourceSetSetting: (pkg: string, id: string, value: string | null) => Native.sourceSetSetting(pkg, id, value),
   sourceRunAction: (pkg: string, id: string, values: string[], confirmed = false) => Native.sourceRunAction(pkg, id, values, confirmed),
@@ -53,8 +49,6 @@ export const MatonOS = {
   launchAndroidApp: (packageName: string) => Native.launchAndroidApp(packageName),
   sourceDetails: (pkg: string, id: string, repo: string) => Native.sourceDetails(pkg, id, repo),
   sourceReviews: (pkg: string, id: string, offset: number, limit: number) => Native.sourceReviews(pkg, id, offset, limit),
-  sourceInstalled: (pkg: string, offset: number, limit: number) => Native.sourceInstalled(pkg, offset, limit),
-  sourceUpdates: (pkg: string, offset: number, limit: number) => Native.sourceUpdates(pkg, offset, limit),
   sourceInstall: (pkg: string, id: string, repo: string, operationId: string) => Native.sourceInstall(pkg, id, repo, operationId),
   sourceCancel: (pkg: string, operationId: string) => Native.sourceCancel(pkg, operationId),
   sourceRunning: (pkg: string, operationId: string) => Native.sourceRunning(pkg, operationId),

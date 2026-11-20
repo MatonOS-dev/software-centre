@@ -48,3 +48,10 @@ behind the selected icon.
 Standalone: clone with `--recurse-submodules` (the plugin contract lives in the
 `contract/` submodule). In MatonOS it is checked out as `rn-apps/flathub` in the
 device tree and built by its `tools/build-apps.sh`.
+
+
+## Source catalogue index (contract v5)
+
+Source plugins now provide one read-only JSON catalogue file descriptor plus a cheap generation number. The store streams each changed catalogue into its own SQLite database, keyed by source, with FTS for app name, summary, and id. Search, Popular, New, installed, updates, and repository-choice ordering are local SQL queries; screens continue to use the existing `Source` interface. Ratings remain store-owned.
+
+Validation: TypeScript and script tests are expected via `npm run typecheck`, `npm run lint`, and the `test:*` scripts. Native module Java is checked with `ANDROID_HOME=/home/hanro50/Android/Sdk ./gradlew :app:compileDebugJavaWithJavac` from `android/`. No VM or deployment test is part of the catalogue change.
