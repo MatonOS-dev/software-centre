@@ -23,6 +23,14 @@ import { Show } from "./components/Show";
 
 type Operation = { app: StoreApp; id: string; kind: "install" | "update" | "uninstall"; progress: string; percent: number | null; error?: string };
 
+function LiveImageNotice() {
+  return <Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
+    <Text style={{ typography: "bodyMedium" }} modifiers={[padding(16, 12, 16, 0)]}>
+      Running from the live image: apps you install are kept in memory, are lost when you restart, and large apps may not fit. Install MatonOS to keep them.
+    </Text>
+  </Host>;
+}
+
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
@@ -85,6 +93,10 @@ export default function App() {
   const [installedApps, setInstalledApps] = useState<StoreApp[]>([]);
   const [updateApps, setUpdateApps] = useState<StoreApp[]>([]);
   const [installedError, setInstalledError] = useState("");
+  const [liveImage, setLiveImage] = useState(false);
+  useEffect(() => {
+    MatonOS.isLiveImage().then(setLiveImage, (error: unknown) => console.error("Live image check failed", error));
+  }, []);
   const [selected, setSelected] = useState<StoreApp | null>(null);
   const [detailError, setDetailError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -524,6 +536,7 @@ export default function App() {
   return <View style={{ flex: 1, flexDirection: "row", backgroundColor: themeColors.background }}>
     <StoreNavRail page={page} updateCount={updateApps.length} onSelect={(next) => void selectPage(next)} />
     <View style={{ flex: 1 }}>
+      <Show when={liveImage}><LiveImageNotice /></Show>
       <Show when={showSearch}><Host matchContents={{ vertical: true }}><OutlinedTextField value={searchNative} singleLine keyboardOptions={{ imeAction: "search" }} onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 12, 16, 12)]}>
         <OutlinedTextField.Placeholder><Text modifiers={[fillMaxWidth()]}>Search apps</Text></OutlinedTextField.Placeholder>
       </OutlinedTextField></Host></Show>

@@ -8,6 +8,7 @@ type NativeApi = {
   accountSession(): Promise<{ token: string; machineId: string }>;
   invalidateAccountSession(token: string): boolean;
   sourceUnavailableOwners(): Promise<string>;
+  isLiveImage(): Promise<boolean>;
   setSourceEnabled(pkg: string, enabled: boolean): Promise<void>;
   sourceInfo(pkg: string): Promise<string>;
   sourceQuery(pkg: string, kind: string, term: string, offset: number, limit: number): Promise<string>;
@@ -37,6 +38,7 @@ export const MatonOS = {
   accountSession: () => Native.accountSession(),
   invalidateAccountSession: (token: string) => Native.invalidateAccountSession(token),
   sourceUnavailableOwners: () => Native.sourceUnavailableOwners(),
+  isLiveImage: () => Native.isLiveImage(),
   setSourceEnabled: (pkg: string, enabled: boolean) => Native.setSourceEnabled(pkg, enabled),
   sourceInfo: (pkg: string) => Native.sourceInfo(pkg),
   sourceQuery: (pkg: string, kind: string, term: string, offset: number, limit: number) => Native.sourceQuery(pkg, kind, term, offset, limit),
