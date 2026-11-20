@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Linking, ScrollView } from "react-native";
 import { EnrichedMarkdownText } from "react-native-enriched-markdown";
 import { FlatList, View } from "react-native";
-import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, LinearProgressIndicator, OutlinedTextField, Row, SegmentedButton, SingleChoiceSegmentedButtonRow, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
-import { height, padding, weight, width } from "@expo/ui/jetpack-compose/modifiers";
+import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, LinearProgressIndicator, OutlinedTextField, Row, SegmentedButton, Spacer, SingleChoiceSegmentedButtonRow, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
+import { fillMaxWidth, height, padding, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import type { StoreApp } from "../sources/Source";
 import { PermissionList } from "../components/PermissionList";
 import { Show } from "../components/Show";
@@ -253,8 +253,9 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
   };
   return <ScrollView onScroll={(event) => { const {contentOffset,contentSize,layoutMeasurement}=event.nativeEvent; if (tab === "reviews" && contentOffset.y+layoutMeasurement.height>=contentSize.height-240) void loadMoreReviews(); }} scrollEventThrottle={400} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 14 }}>
     <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><Column verticalArrangement={{ spacedBy: 14 }}>
-    <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }}>
+    <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 10 }} modifiers={[fillMaxWidth()]}>
       <Button onClick={onBack}><Text>‹  Back</Text></Button>
+      <Spacer modifiers={[weight(1)]} />
       <Button enabled={actionEnabled} onClick={action}><Text>{actionNeedsRepository ? `Install from ${selectedRepository?.name ?? "repository"}` : actionLabel}</Text></Button>
       <RemoveButton installed={installed} busy={busy} onRemove={onRemove} />
       <RepositoryMenu options={repoOptions} selectedRepository={selectedRepository} expanded={sourceMenuOpen} setExpanded={setSourceMenuOpen} onChoose={onChooseRepository} />
