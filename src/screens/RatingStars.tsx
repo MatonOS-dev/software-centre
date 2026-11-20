@@ -18,7 +18,7 @@ function validRating(value: string | null): number | null {
 
 export function StarButton({ stars, filled, enabled, onClick }: { stars: number; filled: boolean; enabled: boolean; onClick: (stars: number) => void }) {
   const colors = useMaterialColors();
-  return <IconButton enabled={enabled} onClick={() => onClick(stars)}>
+  return <IconButton enabled={enabled} onClick={() => onClick(stars)} colors={{ containerColor: "transparent", disabledContainerColor: "transparent", contentColor: colors.onSurfaceVariant, disabledContentColor: colors.onSurfaceVariant }}>
     <Text style={{ typography: "headlineSmall" }} color={filled ? colors.primary : colors.onSurfaceVariant}>{filled ? "★" : "☆"}</Text>
   </IconButton>;
 }

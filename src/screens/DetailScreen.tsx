@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Linking, ScrollView } from "react-native";
 import { EnrichedMarkdownText } from "react-native-enriched-markdown";
 import { FlatList, View } from "react-native";
-import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, LinearProgressIndicator, OutlinedTextField, Row, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
+import { Image as ComposeImage, Button, Column, DropdownMenu, DropdownMenuItem, Host, LinearProgressIndicator, OutlinedTextField, Row, SegmentedButton, SingleChoiceSegmentedButtonRow, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
 import { height, padding, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import type { StoreApp } from "../sources/Source";
 import { MaterialSymbol } from "../components/MaterialSymbol";
@@ -13,7 +13,7 @@ import { appRatingKey, fetchReviews, type OwnedReview } from "../sources/ratings
 import type { Review } from "../sources/Source";
 import { canSubmitReview, reviewErrorMessage } from "./reviewFormState";
 
-type Tab = "details" | "permissions";
+type Tab = "details" | "permissions" | "reviews";
 
 function sizeLabel(value?: number): string {
   if (!value || value < 0) return "Not available";
@@ -74,22 +74,50 @@ function progressPanel(progress: string, percent: number | null, busy: boolean, 
   </Column>;
 }
 
-function tabHeader(tab: Tab, app: StoreApp) {
-  if (tab === "permissions") return <PermissionList app={app} />;
-  return <Text style={{ typography: "titleMedium" }}>About this app</Text>;
+function TabBar({ tab, setTab }: { tab: Tab; setTab: (tab: Tab) => void }) {
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "details", label: "Details" }, { id: "permissions", label: "Permissions" }, { id: "reviews", label: "Reviews" },
+  ];
+  const items = tabs.map((item) => <SegmentedButton key={item.id} selected={tab === item.id} onClick={() => setTab(item.id)}>
+    <SegmentedButton.Label>{item.label}</SegmentedButton.Label>
+  </SegmentedButton>);
+  return <SingleChoiceSegmentedButtonRow>{items}</SingleChoiceSegmentedButtonRow>;
 }
 
-function tabDetails(tab: Tab, markdown: string, colors: ReturnType<typeof useMaterialColors>, openLink: (event: { url: string }) => void) {
-  if (tab !== "details") return null;
-  return <EnrichedMarkdownText markdown={markdown} flavor="commonmark" selectable onLinkPress={openLink}
+function safetySection(app: StoreApp) {
+  const safetyItems = app.safety?.items ?? [];
+  const antiFeatures = app.antiFeatures ?? [];
+  const categories = app.ageRating?.categories ?? [];
+  const safetyRows = safetyItems.map((item) => <Column key={item.id} verticalArrangement={{ spacedBy: 2 }} modifiers={[padding(6, 0, 6, 0)]}>
+    <Text style={{ typography: "titleSmall" }}>{item.title}</Text><Text style={{ typography: "bodySmall" }}>{item.description}</Text>
+  </Column>);
+  const antiFeatureRows = antiFeatures.map((item) => <Column key={item.id} verticalArrangement={{ spacedBy: 2 }} modifiers={[padding(6, 0, 6, 0)]}>
+    <Text style={{ typography: "titleSmall" }}>{item.title}</Text><Text style={{ typography: "bodySmall" }}>{item.description}</Text>
+    <Text style={{ typography: "bodySmall" }}>{item.reason}</Text>
+  </Column>);
+  const categoryRows = categories.map((item) => <Text key={item.id} style={{ typography: "bodySmall" }}>{`${item.title}: ${item.level}`}</Text>);
+  if (!app.safety && antiFeatures.length === 0 && !app.ageRating) return null;
+  const level = app.safety?.level.replaceAll("-", " ");
+  return <Column verticalArrangement={{ spacedBy: 6 }}>
+    <Text style={{ typography: "titleMedium" }}>Safety</Text>
+    {level ? <Text style={{ typography: "bodyMedium" }}>{`Safety assessment: ${level}`}</Text> : null}
+    {safetyRows}{antiFeatureRows}
+    {app.ageRating ? <Text style={{ typography: "bodyMedium" }}>{`Age rating: ${app.ageRating.label || `${app.ageRating.minimumAge}+`} ${app.ageRating.system}`}</Text> : null}
+    {categoryRows}
+  </Column>;
+}
+
+function tabDetails(app: StoreApp, markdown: string, colors: ReturnType<typeof useMaterialColors>, openLink: (event: { url: string }) => void) {
+  return <Column verticalArrangement={{ spacedBy: 14 }}>
+    <Text style={{ typography: "titleMedium" }}>About this app</Text>
+    <EnrichedMarkdownText markdown={markdown} flavor="commonmark" selectable onLinkPress={openLink}
     markdownStyle={{ paragraph: { fontSize: 14, color: colors.onSurface, lineHeight: 21, marginBottom: 12 },
       h1: { color: colors.onSurface }, h2: { color: colors.onSurface }, h3: { color: colors.onSurface },
-      list: { color: colors.onSurface, itemSpacing: 5 }, link: { color: colors.primary } }} />;
-}
-
-function tabFacts(tab: Tab, app: StoreApp) {
-  if (tab !== "details") return null;
-  return <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><DetailFacts app={app} /></Host>;
+      list: { color: colors.onSurface, itemSpacing: 5 }, link: { color: colors.primary } }} />
+    <ScreenshotStrip app={app} />
+    <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><DetailFacts app={app} /></Host>
+    {safetySection(app)}
+  </Column>;
 }
 
 function actionButtonLabel(busy: boolean, busyLabel: string, updateAvailable: boolean, installed: boolean): string {
@@ -206,6 +234,15 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     <OutlinedTextField value={bodyNative} onValueChange={(value) => bodyNative.set(value)}><OutlinedTextField.Label>Your review</OutlinedTextField.Label></OutlinedTextField>
     <Row horizontalArrangement={{spacedBy:8}}><Button enabled={!reviewBusy} onClick={() => void sendReview()}><Text>{reviewBusy ? "Sending…" : "Send"}</Text></Button><Show when={Boolean(myReview)}><Button enabled={!reviewBusy} onClick={() => void removeOwnReview()}><Text>Delete</Text></Button></Show></Row>
   </Column> : <Button enabled={!reviewBusy} onClick={() => void signInForReview()}><Text>{reviewBusy ? "Opening account…" : "Sign in to write a review"}</Text></Button>;
+  const reviewsContent = <Column verticalArrangement={{spacedBy:8}}>
+    <Text style={{typography:"titleLarge"}}>Write a review</Text>
+    {reviewEditor}
+    <ErrorNote message={reviewError} />
+    <Text style={{typography:"titleLarge"}}>Reviews</Text>
+    <Show when={reviews.length === 0 && !reviewError}><Text>No reviews yet</Text></Show>
+    {reviewCards}
+    <Show when={hasMoreReviews}><Button onClick={() => void loadMoreReviews()}><Text>Load more</Text></Button></Show>
+  </Column>;
   const [tab, setTab] = useState<Tab>("details");
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const actionLabel = actionButtonLabel(busy, busyLabel, updateAvailable, installed);
@@ -219,7 +256,7 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     try { const url = new URL(event.url); if (url.protocol === "http:" || url.protocol === "https:") void Linking.openURL(url.toString()); }
     catch (error) { console.error("Opening app description link failed", error); }
   };
-  return <ScrollView onScroll={(event) => { const {contentOffset,contentSize,layoutMeasurement}=event.nativeEvent; if (contentOffset.y+layoutMeasurement.height>=contentSize.height-240) void loadMoreReviews(); }} scrollEventThrottle={400} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 14 }}>
+  return <ScrollView onScroll={(event) => { const {contentOffset,contentSize,layoutMeasurement}=event.nativeEvent; if (tab === "reviews" && contentOffset.y+layoutMeasurement.height>=contentSize.height-240) void loadMoreReviews(); }} scrollEventThrottle={400} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24, gap: 14 }}>
     <Host matchContents={{ vertical: true }} style={{ width: "100%" }}><Column verticalArrangement={{ spacedBy: 14 }}>
     <Button onClick={onBack}><Text>‹  Back</Text></Button>
     <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 18 }}>
@@ -240,23 +277,10 @@ export function DetailScreen({ app, installed, updateAvailable, busy, busyLabel,
     {progressPanel(progress, percent, busy, canCancel, onCancel)}
     <Show when={Boolean(error)}><Text style={{ typography: "bodyMedium" }} color="#b3261e">{error}</Text></Show>
     <RatingStars app={app} installed={installed} onRate={onRate} />
-    <Column verticalArrangement={{spacedBy:8}}>
-      <Text style={{typography:"titleLarge"}}>Write a review</Text>
-      {reviewEditor}
-      <ErrorNote message={reviewError} />
-      <Text style={{typography:"titleLarge"}}>Reviews</Text>
-      <Show when={reviews.length === 0 && !reviewError}><Text>No reviews yet</Text></Show>
-      {reviewCards}
-      <Show when={hasMoreReviews}><Button onClick={() => void loadMoreReviews()}><Text>Load more</Text></Button></Show>
-    </Column>
-    <ScreenshotStrip app={app} />
-    <Row horizontalArrangement={{ spacedBy: 8 }}>
-      <Button onClick={() => setTab("details")}><Text>Details</Text></Button>
-      <Button onClick={() => setTab("permissions")}><Text>Permissions</Text></Button>
-    </Row>
-    {tabHeader(tab, app)}
+    <TabBar tab={tab} setTab={setTab} />
+    {tab === "details" ? tabDetails(app, markdown, colors, openLink) : null}
+    {tab === "permissions" ? <PermissionList app={app} /> : null}
+    {tab === "reviews" ? reviewsContent : null}
     </Column></Host>
-    {tabDetails(tab, markdown, colors, openLink)}
-    {tabFacts(tab, app)}
   </ScrollView>;
 }
