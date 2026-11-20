@@ -53,6 +53,7 @@ public final class SourcePlugins {
   private final Context context;
   private final Events events;
   private final Map<String, Connection> connections = new ConcurrentHashMap<>();
+  private final Map<String, Object> connectionLocks = new ConcurrentHashMap<>();
   private final Map<String, Integer> uncommittedSessions = new ConcurrentHashMap<>();
   private final Map<String, Ownership> pendingOwners = new ConcurrentHashMap<>();
   private final Map<String, Completion> completions = new ConcurrentHashMap<>();
@@ -154,24 +155,27 @@ public final class SourcePlugins {
 
   /** Binds (blocking, off the main thread) to an enabled plugin. */
   public ISoftwareSource source(String pkg) throws Exception {
-    Map<String, Object> row = null;
-    for (Map<String, Object> candidate : list()) if (pkg.equals(candidate.get("package"))) row = candidate;
-    if (row == null) throw new IllegalArgumentException("No store source plugin in " + pkg);
-    if (!(Boolean) row.get("enabled")) throw new IllegalStateException("Store source " + pkg + " is disabled");
-    Connection connection = connections.get(pkg);
-    if (connection == null || connection.binder == null || !connection.binder.isBinderAlive()) {
-      if (connection != null) disconnect(pkg);
-      connection = new Connection();
-      Intent intent = new Intent(ACTION).setClassName(pkg, (String) row.get("service"));
-      if (!context.bindService(intent, connection, Context.BIND_AUTO_CREATE))
-        throw new IllegalStateException("Cannot bind store source " + pkg);
-      connections.put(pkg, connection);
-      if (!connection.ready.await(BIND_TIMEOUT_S, TimeUnit.SECONDS)) {
-        disconnect(pkg);
-        throw new IllegalStateException("Store source " + pkg + " did not connect within " + BIND_TIMEOUT_S + " s");
+    Object lock = connectionLocks.computeIfAbsent(pkg, ignored -> new Object());
+    synchronized (lock) {
+      Map<String, Object> row = null;
+      for (Map<String, Object> candidate : list()) if (pkg.equals(candidate.get("package"))) row = candidate;
+      if (row == null) throw new IllegalArgumentException("No store source plugin in " + pkg);
+      if (!(Boolean) row.get("enabled")) throw new IllegalStateException("Store source " + pkg + " is disabled");
+      Connection connection = connections.get(pkg);
+      if (connection == null || connection.binder == null || !connection.binder.isBinderAlive()) {
+        if (connection != null) disconnect(pkg);
+        connection = new Connection();
+        Intent intent = new Intent(ACTION).setClassName(pkg, (String) row.get("service"));
+        if (!context.bindService(intent, connection, Context.BIND_AUTO_CREATE))
+          throw new IllegalStateException("Cannot bind store source " + pkg);
+        connections.put(pkg, connection);
+        if (!connection.ready.await(BIND_TIMEOUT_S, TimeUnit.SECONDS)) {
+          disconnect(pkg);
+          throw new IllegalStateException("Store source " + pkg + " did not connect within " + BIND_TIMEOUT_S + " s");
+        }
       }
+      return ISoftwareSource.Stub.asInterface(connection.binder);
     }
-    return ISoftwareSource.Stub.asInterface(connection.binder);
   }
 
   public void install(String pkg, String id, String repo, String operationId) throws Exception {
