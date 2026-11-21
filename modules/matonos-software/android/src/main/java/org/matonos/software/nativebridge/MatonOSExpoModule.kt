@@ -26,6 +26,8 @@ class MatonOSExpoModule : Module() {
       if (result != null) event["result"] = result
       sendEvent("linuxAppStoreEvent", event)
     } }
+    // Catch packages left unused while the store was closed.
+    OnActivityEntersForeground { requirePlugins().removeUnused() }
     OnDestroy { plugins?.close(); plugins = null; packageEventSink = null; sourceCallQueue.cancel() }
     // Store source plugins (SOURCE-PLUGINS.md). Calls return the plugin's JSON as-is.
     AsyncFunction("sourcePlugins") { requirePlugins().list() }

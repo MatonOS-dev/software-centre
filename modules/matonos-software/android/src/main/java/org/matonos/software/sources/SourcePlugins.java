@@ -124,6 +124,58 @@ public final class SourcePlugins {
     this.context = context.getApplicationContext();
     this.events = events;
     this.catalogueIndex = new CatalogueIndex(this.context);
+    // Removing an app can leave its runtimes and extensions unused, also when removed from Settings.
+    android.content.IntentFilter removed = new android.content.IntentFilter(Intent.ACTION_PACKAGE_FULLY_REMOVED);
+    removed.addDataScheme("package");
+    this.context.registerReceiver(packageRemoved, removed, Context.RECEIVER_EXPORTED);
+  }
+
+  private final java.util.concurrent.ExecutorService unusedCleanup = java.util.concurrent.Executors.newSingleThreadExecutor();
+  private final java.util.concurrent.atomic.AtomicBoolean unusedCleanupQueued = new java.util.concurrent.atomic.AtomicBoolean();
+  private final android.content.BroadcastReceiver packageRemoved = new android.content.BroadcastReceiver() {
+    @Override public void onReceive(Context ignored, Intent intent) {
+      if (intent.getData() != null && owner(intent.getData().getSchemeSpecificPart()) != null) removeUnused();
+    }
+  };
+
+  /**
+   * Asks each enabled source which of its packages nothing needs any more and
+   * removes those recorded to that source. Runs in the background; requests
+   * while one is queued collapse into it.
+   */
+  public void removeUnused() {
+    if (!unusedCleanupQueued.compareAndSet(false, true)) return;
+    unusedCleanup.execute(() -> {
+      unusedCleanupQueued.set(false);
+      for (Map<String, Object> row : list()) {
+        if (!Boolean.TRUE.equals(row.get("enabled"))) continue;
+        String pkg = String.valueOf(row.get("package"));
+        String[] unused;
+        try { unused = source(pkg).unusedPackages(); }
+        catch (Exception error) { Log.e(TAG, pkg + ": listing unused packages failed", error); continue; }
+        for (String packageName : unused) {
+          Ownership owner = owner(packageName);
+          if (owner == null || !pkg.equals(owner.source)) { Log.i(TAG, pkg + ": keeping unused " + packageName + "; it was not installed through this source"); continue; }
+          Log.i(TAG, pkg + ": removing unused " + packageName);
+          context.getPackageManager().getPackageInstaller().uninstall(packageName, unusedRemovalResult(packageName));
+        }
+      }
+    });
+  }
+
+  private android.content.IntentSender unusedRemovalResult(String packageName) {
+    String action = context.getPackageName() + ".UNUSED_REMOVED." + packageName;
+    context.registerReceiver(new android.content.BroadcastReceiver() {
+      @Override public void onReceive(Context ignored, Intent intent) {
+        context.unregisterReceiver(this);
+        int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
+        // Background cleanup never prompts; a removal that needs the user is reported, not shown.
+        if (status != PackageInstaller.STATUS_SUCCESS)
+          Log.e(TAG, "Removing unused " + packageName + " failed: status " + status + " " + intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE));
+      }
+    }, new android.content.IntentFilter(action), Context.RECEIVER_NOT_EXPORTED);
+    return android.app.PendingIntent.getBroadcast(context, 0, new Intent(action).setPackage(context.getPackageName()),
+        android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_MUTABLE).getIntentSender();
   }
 
   /** Every installed plugin service that requires the store's bind permission. */
@@ -182,13 +234,15 @@ public final class SourcePlugins {
 
   public String query(String pkg,String kind,String term,int offset,int limit) throws Exception {
     ISoftwareSource plugin=source(pkg);
-    ParcelFileDescriptor catalogue=plugin.catalogue();long version=plugin.catalogueVersion();
+    // Version first: a package event between the calls must leave the import stale, not mislabelled.
+    long version=plugin.catalogueVersion();ParcelFileDescriptor catalogue=plugin.catalogue();
     catalogueIndex.importIfChanged(pkg,version,catalogue);
     return catalogueIndex.query(pkg,kind,term,offset,limit);
   }
   public String repositories(String pkg) throws Exception {
     ISoftwareSource plugin=source(pkg);
-    ParcelFileDescriptor catalogue=plugin.catalogue();long version=plugin.catalogueVersion();
+    // Version first: a package event between the calls must leave the import stale, not mislabelled.
+    long version=plugin.catalogueVersion();ParcelFileDescriptor catalogue=plugin.catalogue();
     catalogueIndex.importIfChanged(pkg,version,catalogue);
     return catalogueIndex.repositories(pkg);
   }
@@ -335,6 +389,8 @@ public final class SourcePlugins {
   }
 
   public void close() {
+    try { context.unregisterReceiver(packageRemoved); } catch (Exception error) { Log.e(TAG, "Unregistering package removal receiver failed", error); }
+    unusedCleanup.shutdownNow();
     for (String pkg : new ArrayList<>(connections.keySet())) disconnect(pkg);
     catalogueIndex.close();
   }
