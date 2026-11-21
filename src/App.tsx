@@ -464,7 +464,11 @@ export default function App() {
     setMessage("");
     try {
       await MatonOS.launchAndroidApp(app.packageName ?? app.id);
-    } catch (error) { setOperationErrors((current) => ({ ...current, [app.ref]: errorText(error) })); }
+    } catch (error) {
+      setOperationErrors((current) => ({ ...current, [app.ref]: errorText(error) }));
+      // The package may have been removed outside the store since the list was loaded.
+      void refreshInstalled();
+    }
   }
 
   const renderApp = ({ item }: { item: StoreApp }) => (
