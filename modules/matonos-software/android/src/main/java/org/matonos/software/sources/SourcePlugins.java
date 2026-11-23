@@ -263,17 +263,16 @@ public final class SourcePlugins {
       String pkg = String.valueOf(row.get("package"));
       org.matonos.store.source.types.SourceInfo info;
       try { info = source(pkg).info(); }
-      catch (Exception error) { Log.e(TAG, "Reading source info while finding Flatpak plugin package=" + pkg + " failed", error); continue; }
-      String advertised = ((info.name == null ? "" : info.name) + " " + (info.label == null ? "" : info.label)).toLowerCase(java.util.Locale.ROOT);
-      if (advertised.contains("flatpak")) {
-        if (match != null) throw new IllegalStateException("More than one enabled source advertises Flatpak; disable one before opening a bundle");
+      catch (Exception error) { Log.e(TAG, "Reading source info while finding local-file source package=" + pkg + " failed", error); continue; }
+      if ((info.capabilities & org.matonos.store.source.ISoftwareSource.CAP_LOCAL_FILES) != 0) {
+        if (match != null) throw new IllegalStateException("More than one enabled source accepts local files (" + match + ", " + pkg + "); disable one before opening a bundle");
         match = pkg;
         if (info.version != org.matonos.store.source.ISoftwareSource.VERSION || info.revision < 2)
           throw new IllegalStateException("Flatpak source contract version=" + info.version + " revision=" + info.revision
               + "; local bundles require version=" + org.matonos.store.source.ISoftwareSource.VERSION + " revision 2 or newer");
       }
     }
-    if (match == null) throw new IllegalStateException("No enabled Flatpak source is available for local .flatpak bundles");
+    if (match == null) throw new IllegalStateException("No enabled source accepts local .flatpak bundles");
     return match;
   }
 
