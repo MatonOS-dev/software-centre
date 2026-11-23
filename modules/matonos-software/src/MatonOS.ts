@@ -22,6 +22,9 @@ type NativeApi = {
   sourceDetails(pkg: string, id: string, repo: string): Promise<string>;
   sourceReviews(pkg: string, id: string, offset: number, limit: number): Promise<string>;
   sourceInstall(pkg: string, id: string, repo: string, operationId: string): Promise<void>;
+  localBundleName(uri: string): Promise<string>;
+  validateLocalBundleSource(): Promise<string>;
+  sourceInstallLocalFile(uri: string, displayName: string, allowUnsigned: boolean, operationId: string): Promise<void>;
   sourceCancel(pkg: string, operationId: string): Promise<void>;
   sourceRunning(pkg: string, operationId: string): Promise<boolean>;
   sourceUninstall(pkg: string, packageName: string, operationId: string): Promise<void>;
@@ -52,6 +55,9 @@ export const MatonOS = {
   sourceDetails: (pkg: string, id: string, repo: string) => Native.sourceDetails(pkg, id, repo),
   sourceReviews: (pkg: string, id: string, offset: number, limit: number) => Native.sourceReviews(pkg, id, offset, limit),
   sourceInstall: (pkg: string, id: string, repo: string, operationId: string) => Native.sourceInstall(pkg, id, repo, operationId),
+  localBundleName: (uri: string) => Native.localBundleName(uri),
+  validateLocalBundleSource: () => Native.validateLocalBundleSource(),
+  sourceInstallLocalFile: (uri: string, displayName: string, allowUnsigned: boolean, operationId: string) => Native.sourceInstallLocalFile(uri, displayName, allowUnsigned, operationId),
   sourceCancel: (pkg: string, operationId: string) => Native.sourceCancel(pkg, operationId),
   sourceRunning: (pkg: string, operationId: string) => Native.sourceRunning(pkg, operationId),
   sourceUninstall: (pkg: string, packageName: string, operationId: string) => Native.sourceUninstall(pkg, packageName, operationId),

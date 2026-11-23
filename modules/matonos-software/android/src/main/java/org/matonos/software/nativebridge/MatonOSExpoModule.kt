@@ -132,6 +132,14 @@ class MatonOSExpoModule : Module() {
       if (liveImage()) throw IllegalStateException("Apps can't be installed on the live image. Install MatonOS first.")
       requirePlugins().install(pkg, id, repo, operationId)
     }
+    AsyncFunction("localBundleName") { uri: String ->
+      requirePlugins().localBundleName(android.net.Uri.parse(uri))
+    }.runOnQueue(sourceCallQueue)
+    AsyncFunction("validateLocalBundleSource") { requirePlugins().requireLocalBundleSource() }.runOnQueue(sourceCallQueue)
+    AsyncFunction("sourceInstallLocalFile") { uri: String, displayName: String, allowUnsigned: Boolean, operationId: String ->
+      if (liveImage()) throw IllegalStateException("Apps can't be installed on the live image. Install MatonOS first.")
+      requirePlugins().installLocalFile(android.net.Uri.parse(uri), displayName, allowUnsigned, operationId)
+    }.runOnQueue(sourceCallQueue)
     AsyncFunction("sourceCancel") { pkg: String, operationId: String -> requirePlugins().cancel(pkg, operationId) }
     AsyncFunction("sourceRunning") { pkg: String, operationId: String -> requirePlugins().running(pkg, operationId) }
     AsyncFunction("sourceUninstall") { pkg: String, packageName: String, operationId: String ->

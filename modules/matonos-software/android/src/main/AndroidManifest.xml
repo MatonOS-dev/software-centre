@@ -18,6 +18,20 @@
     </intent>
   </queries>
   <application>
+    <activity android:name="org.matonos.software.MainActivity" android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:mimeType="application/vnd.flatpak" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="content" android:pathPattern=".*\\.flatpak" />
+      </intent-filter>
+    </activity>
     <service android:name="org.matonos.software.sources.StoreSourceService" android:exported="true">
       <intent-filter><action android:name="org.matonos.store.STORE" /></intent-filter>
     </service>

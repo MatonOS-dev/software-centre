@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { AppState, FlatList, SectionList, View } from "react-native";
+import { AppState, FlatList, Linking, SectionList, View } from "react-native";
 import { Button, Host, OutlinedTextField, Row, Text, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, padding, paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
@@ -20,8 +20,10 @@ import { DetailScreen } from "./screens/DetailScreen";
 import { SourceSettingsScreen } from "./screens/SourceSettingsScreen";
 import { SourcesScreen } from "./screens/SourcesScreen";
 import { Show } from "./components/Show";
+import { LocalBundleConfirmation } from "./screens/LocalBundleConfirmation";
 
 type Operation = { app: StoreApp; id: string; kind: "install" | "update" | "uninstall"; progress: string; percent: number | null; error?: string };
+type LocalBundle = { uri: string; fileName: string; sourcePackage: string; sourceError: string; operationRef?: string };
 
 function LiveImageNotice() {
   return <Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
@@ -94,8 +96,28 @@ export default function App() {
   const [updateApps, setUpdateApps] = useState<StoreApp[]>([]);
   const [installedError, setInstalledError] = useState("");
   const [liveImage, setLiveImage] = useState(false);
+  const [localBundle, setLocalBundle] = useState<LocalBundle | null>(null);
   useEffect(() => {
     MatonOS.isLiveImage().then(setLiveImage, (error: unknown) => console.error("Live image check failed", error));
+  }, []);
+  useEffect(() => {
+    let active = true;
+    const openBundle = async (url: string | null) => {
+      if (!active || !url?.startsWith("content://")) return;
+      try {
+        const [fileName, sourcePackage] = await Promise.all([MatonOS.localBundleName(url), MatonOS.validateLocalBundleSource()]);
+        if (active) setLocalBundle({ uri: url, fileName, sourcePackage, sourceError: "" });
+      } catch (error) {
+        console.error(`Opening local .flatpak file failed uri=${url}`, error);
+        let fileName = "Local .flatpak bundle";
+        try { fileName = decodeURIComponent(url.split("/").pop() ?? fileName); }
+        catch (decodeError) { console.error(`Decoding local bundle name failed uri=${url}`, decodeError); }
+        if (active) setLocalBundle({ uri: url, fileName, sourcePackage: "", sourceError: errorText(error) });
+      }
+    };
+    void Linking.getInitialURL().then(openBundle, (error: unknown) => console.error("Reading initial file-open intent failed", error));
+    const subscription = Linking.addEventListener("url", (event) => { void openBundle(event.url); });
+    return () => { active = false; subscription.remove(); };
   }, []);
   const [selected, setSelected] = useState<StoreApp | null>(null);
   const [detailError, setDetailError] = useState("");
@@ -339,6 +361,28 @@ export default function App() {
     } catch (error) { updateOperation(app.ref, null); setOperationErrors((current) => ({ ...current, [app.ref]: errorText(error) })); }
   }
 
+  async function startLocalBundleInstall() {
+    if (!localBundle || localBundle.sourceError || (localBundle.operationRef && operations[localBundle.operationRef])) return;
+    const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const ref = `local-flatpak:${operationId}`;
+    const app: StoreApp = {
+      id: ref, source: localBundle.sourcePackage, packageName: ref, name: localBundle.fileName,
+      summary: "Local Flatpak bundle", icon: "", developer: "Local file", description: "Installed from a local bundle.",
+      screenshots: [], permissions: [], ref,
+    };
+    setOperationErrors((current) => { const next = { ...current }; delete next[ref]; return next; });
+    updateOperation(ref, { app, id: operationId, kind: "install", progress: "Preparing local bundle…", percent: null });
+    setLocalBundle({ ...localBundle, operationRef: ref });
+    try {
+      // This explicit confirmation is the only path that opts into unsigned bundles.
+      await MatonOS.sourceInstallLocalFile(localBundle.uri, localBundle.fileName, true, operationId);
+      setOperations((current) => current[ref]?.id === operationId ? { ...current, [ref]: { ...current[ref], progress: "Installing local bundle…" } } : current);
+    } catch (error) {
+      updateOperation(ref, null);
+      setOperationErrors((current) => ({ ...current, [ref]: errorText(error) }));
+    }
+  }
+
   async function startUninstall(app: StoreApp | null = selected) {
     if (!app || operations[app.ref]) return;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -379,7 +423,10 @@ export default function App() {
         const completed = payload.result;
         updateOperation(ref, null);
         if (!completed?.ok) setOperationErrors((current) => ({ ...current, [ref]: completed?.error || completed?.output?.trim() || "The operation did not complete." }));
-        else setOperationErrors((current) => { const next = { ...current }; delete next[ref]; return next; });
+        else {
+          setOperationErrors((current) => { const next = { ...current }; delete next[ref]; return next; });
+          if (ref.startsWith("local-flatpak:")) setLocalBundle(null);
+        }
         void refreshInstalled();
         void refreshUpdates();
         return;
@@ -477,7 +524,14 @@ export default function App() {
   const keyApp = (app: StoreApp) => `${app.source}:${app.id}`;
 
   let content: ReactNode;
-  if (settingsOpen) {
+  if (localBundle) {
+    const operation = localBundle.operationRef ? operations[localBundle.operationRef] : null;
+    content = <LocalBundleConfirmation fileName={localBundle.fileName}
+      sourceError={localBundle.sourceError || (localBundle.operationRef ? operationErrors[localBundle.operationRef] ?? "" : "")}
+      progress={operation?.progress ?? ""}
+      onCancel={() => { if (localBundle.operationRef && operation) void cancelOperation(localBundle.operationRef); else setLocalBundle(null); }}
+      onInstall={() => void startLocalBundleInstall()} />;
+  } else if (settingsOpen) {
     const settingPlugin = plugins.find((plugin) => plugin.package === settingsSource);
     content = <SourceSettingsScreen source={settingsSource} label={settingPlugin?.label ?? "Source"} onBack={() => setSettingsOpen(false)} onChanged={() => void runSearch(searchText)} />;
   } else if (selected) {

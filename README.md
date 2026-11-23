@@ -25,6 +25,30 @@ AccountManager token bundle; the store sends it as `X-Maton-Machine-Id`, which
 the server uses to bind a session to its device.
 Review text and summaries are store owned and identical across sources.
 
+## Opening local Flatpak bundles
+
+The Software Centre accepts `.flatpak` files from Android's file picker or
+another document provider (`application/vnd.flatpak`, with a `.flatpak` path
+fallback for providers that send a generic MIME type). It reads the provider's
+`content://` URI and file name, then finds the enabled source that advertises
+Flatpak. The operation is available only when that source reports contract
+revision 2 or newer. `.flatpakref` files are not supported.
+
+Opening a bundle shows a confirmation with the file name and an unverified
+source warning. The install request is sent only after the user selects
+**Install anyway**; that confirmation is the only store path that sets
+`allowUnsigned=true`. The Flatpak source reports whether the bundle signature
+is signed or unsigned in the normal install progress line. APK staging,
+PackageInstaller commit, progress, and cancellation use the source install
+operation path. A missing or old Flatpak source is shown as a clear error.
+
+To exercise the flow on a fresh test image, create or obtain a `.flatpak`
+bundle, open it from the device's file picker, verify the file name and warning,
+then cancel and confirm no install starts. Open it again, confirm, and check
+that progress reports `Local bundle signature: signed` or `Local bundle
+signature: unsigned`. Repeat with Flatpak source disabled or an older source
+revision and verify that installation is blocked with the source error.
+
 F-Droid now lives in the separate Java app
 [`store-sources/fdroid`](../../store-sources/fdroid/README.md). It owns trusted
 repository preferences, authenticated indices, compatible version selection,

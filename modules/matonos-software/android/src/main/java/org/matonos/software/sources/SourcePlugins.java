@@ -9,6 +9,8 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.ParcelFileDescriptor;
@@ -248,10 +250,73 @@ public final class SourcePlugins {
   }
 
   public void install(String pkg, String id, String repo, String operationId) throws Exception {
+    invokeInstall(pkg, operationId, new Ownership(pkg, id, repo));
+    try { source(pkg).install(id, repo, operationId, callback(pkg, id)); }
+    catch (Exception error) { installCallFailed(pkg, operationId, error); }
+  }
+
+  /** Resolve the enabled source that advertises itself as Flatpak, then enforce the local-file contract. */
+  public String requireLocalBundleSource() throws Exception {
+    String match = null;
+    for (Map<String, Object> row : list()) {
+      if (!Boolean.TRUE.equals(row.get("enabled"))) continue;
+      String pkg = String.valueOf(row.get("package"));
+      org.matonos.store.source.types.SourceInfo info;
+      try { info = source(pkg).info(); }
+      catch (Exception error) { Log.e(TAG, "Reading source info while finding Flatpak plugin package=" + pkg + " failed", error); continue; }
+      String advertised = ((info.name == null ? "" : info.name) + " " + (info.label == null ? "" : info.label)).toLowerCase(java.util.Locale.ROOT);
+      if (advertised.contains("flatpak")) {
+        if (match != null) throw new IllegalStateException("More than one enabled source advertises Flatpak; disable one before opening a bundle");
+        match = pkg;
+        if (info.version != org.matonos.store.source.ISoftwareSource.VERSION || info.revision < 2)
+          throw new IllegalStateException("Flatpak source contract version=" + info.version + " revision=" + info.revision
+              + "; local bundles require version=" + org.matonos.store.source.ISoftwareSource.VERSION + " revision 2 or newer");
+      }
+    }
+    if (match == null) throw new IllegalStateException("No enabled Flatpak source is available for local .flatpak bundles");
+    return match;
+  }
+
+  public String localBundleName(Uri uri) throws Exception {
+    if (uri == null || !"content".equals(uri.getScheme())) throw new IllegalArgumentException("Local bundle must be opened from a content:// URI");
+    try (Cursor cursor = context.getContentResolver().query(uri, new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+      if (cursor != null && cursor.moveToFirst()) {
+        int column = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+        if (column >= 0) {
+          String name = cursor.getString(column);
+          if (name != null && !name.trim().isEmpty()) return name;
+        }
+      }
+    }
+    String fallback = uri.getLastPathSegment();
+    if (fallback == null || fallback.isEmpty()) throw new IllegalStateException("Could not read the .flatpak file name from the document provider");
+    return fallback;
+  }
+
+  public void installLocalFile(Uri uri, String displayName, boolean allowUnsigned, String operationId) throws Exception {
+    String pkg = requireLocalBundleSource();
+    if (uri == null || !"content".equals(uri.getScheme())) throw new IllegalArgumentException("Local bundle must be opened from a content:// URI");
+    if (displayName == null || displayName.trim().isEmpty()) throw new IllegalArgumentException("Local bundle file name is empty");
+    if (!displayName.toLowerCase(java.util.Locale.ROOT).endsWith(".flatpak")) throw new IllegalArgumentException("Only .flatpak bundle files can be opened here: " + displayName);
+    ParcelFileDescriptor file = context.getContentResolver().openFileDescriptor(uri, "r");
+    if (file == null) throw new IllegalStateException("Document provider returned no file descriptor for " + displayName);
+    try {
+      invokeInstall(pkg, operationId, null);
+      source(pkg).installLocalFile(file, displayName, allowUnsigned, operationId, callback(pkg, displayName));
+    } catch (Exception error) { installCallFailed(pkg, operationId, error); }
+    finally {
+      try { Log.i(TAG, "close fd=" + file.getFd() + " at SourcePlugins.installLocalFile"); file.close(); }
+      catch (Exception error) { Log.e(TAG, "Closing local bundle descriptor uri=" + uri + " op=" + operationId + " failed", error); }
+    }
+  }
+
+  private void invokeInstall(String pkg, String operationId, Ownership owner) {
     uncommittedSessions.remove(operationId);
-    pendingOwners.put(operationId, new Ownership(pkg, id, repo));
+    if (owner != null) pendingOwners.put(operationId, owner);
     operationSources.put(operationId, pkg);
-    try { source(pkg).install(id, repo, operationId, new IInstallCallback.Stub() {
+  }
+  private IInstallCallback callback(String pkg, String description) {
+    return new IInstallCallback.Stub() {
       @Override public void progress(String op, String phase, int percent, long done, long total) {
         events.progress(pkg, op, phase, percent, done, total);
       }
@@ -277,16 +342,17 @@ public final class SourcePlugins {
       }
       @Override public void failed(String op, String error) {
         operationSources.remove(op);
-        Log.e(TAG, pkg + ": install " + id + " failed: " + error);
+        Log.e(TAG, pkg + ": install " + description + " failed: " + error);
         pendingOwners.remove(op);
         Completion completion = completions.remove(op); if (completion != null) completion.finish(false, error);
         events.result(pkg, op, false, error);
       }
-    }); } catch (Exception error) {
+    };
+  }
+  private void installCallFailed(String pkg, String operationId, Exception error) throws Exception {
       if (error instanceof RemoteException) throw remoteFailure(pkg, error);
       operationSources.remove(operationId); pendingOwners.remove(operationId); completions.remove(operationId);
       throw error;
-    }
   }
 
   /** Stops source work and abandons a session that has not yet been committed. */
